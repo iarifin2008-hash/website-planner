@@ -2,14 +2,18 @@ import { BudgetMonth, WalletItem, IncomeItem, SavingItem, FixedExpenseItem, Vari
 
 export const DEFAULT_PROFILE: UserProfile = {
   name: 'Sobat Cuan',
+  email: 'arifin.cuan@planner.id',
   pin: '1234',
   isPinEnabled: false,
+  isLoggedIn: false, // Menampilkan halaman pendaftaran/masuk akun terlebih dahulu
   themePreset: 'SHARK_BLUE',
   fontColorPreset: 'DEEP_CHARCOAL',
   fontSizeScale: 1.0,
   useManualBalance: false,
   manualBalance: 0,
-  syncCode: 'CUAN-7701'
+  syncCode: 'CUAN-7701',
+  lastSyncedAt: new Date().toLocaleDateString('id-ID'),
+  deviceViewMode: 'WINDOWS'
 };
 
 export const DEFAULT_MONTHS: BudgetMonth[] = [
@@ -19,11 +23,11 @@ export const DEFAULT_MONTHS: BudgetMonth[] = [
 ];
 
 export const DEFAULT_WALLETS: WalletItem[] = [
-  { id: 'w1', name: 'Saldo Rekening BCA', type: 'BANK', balance: 5250000, colorHex: '#6599B8', iconName: 'bank', isDefault: true },
-  { id: 'w2', name: 'Saldo DANA', type: 'E_WALLET', balance: 750000, colorHex: '#118EEA', iconName: 'dana' },
-  { id: 'w3', name: 'Uang Cash', type: 'CASH', balance: 450000, colorHex: '#74C69D', iconName: 'cash' },
-  { id: 'w4', name: 'GoPay', type: 'E_WALLET', balance: 350000, colorHex: '#00AED6', iconName: 'wallet' },
-  { id: 'w5', name: 'ShopeePay', type: 'E_WALLET', balance: 200000, colorHex: '#EE4D2D', iconName: 'card' }
+  { id: 'w1', name: 'Saldo Rekening BCA', type: 'BANK', initialBalance: 6000000, balance: 4575000, colorHex: '#6599B8', iconName: 'bank', isDefault: true },
+  { id: 'w2', name: 'Saldo DANA', type: 'E_WALLET', initialBalance: 1200000, balance: 545000, colorHex: '#118EEA', iconName: 'dana' },
+  { id: 'w3', name: 'Uang Cash', type: 'CASH', initialBalance: 600000, balance: 398000, colorHex: '#74C69D', iconName: 'cash' },
+  { id: 'w4', name: 'GoPay', type: 'E_WALLET', initialBalance: 500000, balance: 245000, colorHex: '#00AED6', iconName: 'wallet' },
+  { id: 'w5', name: 'ShopeePay', type: 'E_WALLET', initialBalance: 300000, balance: 300000, colorHex: '#EE4D2D', iconName: 'card' }
 ];
 
 export const DEFAULT_INCOMES: IncomeItem[] = [
@@ -77,71 +81,102 @@ export const THEME_PRESETS: Record<string, {
   background: string;
   border: string;
   badgeBg: string;
+  accent: string;
 }> = {
   SHARK_BLUE: {
     id: 'SHARK_BLUE',
     name: 'Pastel Shark Blue',
     primary: '#6599B8',
     primaryLight: '#D6EAF8',
-    primaryDark: '#2B536E',
-    surface: '#EBF5FB',
-    background: '#F4F9FC',
-    border: '#BCE0FD',
-    badgeBg: '#E0EEFD'
+    primaryDark: '#214761',
+    surface: '#F0F7FB',
+    background: '#F6FAFD',
+    border: '#CBE5F7',
+    badgeBg: '#E1F0FA',
+    accent: '#3B82F6'
   },
   SWEET_ROSE: {
     id: 'SWEET_ROSE',
-    name: 'Pastel Sweet Rose',
-    primary: '#E78EA9',
+    name: 'Pastel Sakura Rose',
+    primary: '#E58A9F',
     primaryLight: '#FFE3E8',
-    primaryDark: '#7D2E49',
-    surface: '#FFF0F3',
-    background: '#FFF7F9',
-    border: '#FFCCD5',
-    badgeBg: '#FFE3E8'
+    primaryDark: '#6E2338',
+    surface: '#FFF2F5',
+    background: '#FFF8FA',
+    border: '#FFD1DC',
+    badgeBg: '#FFE5EC',
+    accent: '#EC4899'
   },
   MINT_SAGE: {
     id: 'MINT_SAGE',
-    name: 'Pastel Mint Sage',
-    primary: '#52B788',
-    primaryLight: '#D8F3DC',
-    primaryDark: '#1B4332',
-    surface: '#E8F5E9',
-    background: '#F1F8F4',
-    border: '#B7E4C7',
-    badgeBg: '#D8F3DC'
+    name: 'Pastel Mint Matcha',
+    primary: '#4FA87F',
+    primaryLight: '#D6F2E2',
+    primaryDark: '#194530',
+    surface: '#EEF8F3',
+    background: '#F5FAF7',
+    border: '#C0E9D3',
+    badgeBg: '#DCF4E7',
+    accent: '#10B981'
   },
   LAVENDER_DREAM: {
     id: 'LAVENDER_DREAM',
-    name: 'Pastel Lavender',
-    primary: '#A594F9',
-    primaryLight: '#EDE7F6',
-    primaryDark: '#4A148C',
-    surface: '#F3E8FF',
-    background: '#F9F5FF',
-    border: '#DDD6FE',
-    badgeBg: '#EDE7F6'
+    name: 'Pastel Cloud Lilac',
+    primary: '#9A86E9',
+    primaryLight: '#EBE5FC',
+    primaryDark: '#3D2A7A',
+    surface: '#F4F0FF',
+    background: '#FAF8FF',
+    border: '#DDD2FA',
+    badgeBg: '#ECE4FE',
+    accent: '#8B5CF6'
   },
   SUNSET_PEACH: {
     id: 'SUNSET_PEACH',
-    name: 'Pastel Sunset Peach',
-    primary: '#F4A261',
-    primaryLight: '#FFE8D6',
-    primaryDark: '#8D4B1C',
-    surface: '#FFF3E0',
-    background: '#FFF9F2',
-    border: '#FFD8B8',
-    badgeBg: '#FFE8D6'
+    name: 'Pastel Sunset Apricot',
+    primary: '#E78C4E',
+    primaryLight: '#FFE7D6',
+    primaryDark: '#6B3714',
+    surface: '#FFF4EB',
+    background: '#FFFAF5',
+    border: '#FFD7BC',
+    badgeBg: '#FFEAD8',
+    accent: '#F97316'
+  },
+  HONEY_BUTTER: {
+    id: 'HONEY_BUTTER',
+    name: 'Pastel Honey Buttercup',
+    primary: '#D4A017',
+    primaryLight: '#FFF6D1',
+    primaryDark: '#5E4403',
+    surface: '#FFFDF0',
+    background: '#FFFEF8',
+    border: '#FDECB0',
+    badgeBg: '#FFF8D9',
+    accent: '#EAB308'
+  },
+  OCEAN_BREEZE: {
+    id: 'OCEAN_BREEZE',
+    name: 'Pastel Ocean Mist',
+    primary: '#43A4B8',
+    primaryLight: '#D3F4FA',
+    primaryDark: '#124855',
+    surface: '#EBF9FC',
+    background: '#F4FCFE',
+    border: '#BFEBF4',
+    badgeBg: '#D8F6FC',
+    accent: '#06B6D4'
   },
   DARK_SLATE: {
     id: 'DARK_SLATE',
     name: 'Pastel Midnight Slate',
     primary: '#7E8CE0',
     primaryLight: '#2A3447',
-    primaryDark: '#E2E8F0',
+    primaryDark: '#F1F5F9',
     surface: '#1E293B',
     background: '#0F172A',
     border: '#334155',
-    badgeBg: '#1E293B'
+    badgeBg: '#1E293B',
+    accent: '#818CF8'
   }
 };

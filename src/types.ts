@@ -2,7 +2,8 @@ export interface WalletItem {
   id: string;
   name: string;
   type: 'CASH' | 'E_WALLET' | 'BANK' | 'OTHER';
-  balance: number;
+  initialBalance: number; // Saldo awal / modal awal
+  balance: number; // Sisa saldo aktif saat ini
   colorHex: string;
   iconName: string;
   isDefault?: boolean;
@@ -10,14 +11,20 @@ export interface WalletItem {
 
 export interface UserProfile {
   name: string;
+  email?: string;
   pin: string;
   isPinEnabled: boolean;
+  isLoggedIn: boolean;
   themePreset: string;
   fontColorPreset: string;
   fontSizeScale: number;
   useManualBalance: boolean;
   manualBalance: number;
   syncCode: string;
+  lastSyncedAt?: string;
+  deviceViewMode?: 'WINDOWS' | 'ANDROID_TABLET' | 'IPHONE';
+  supabaseUserId?: string;
+  supabaseEmail?: string;
 }
 
 export interface BudgetMonth {
@@ -125,6 +132,9 @@ export interface CategoryRank {
 }
 
 export interface FinancialOverview {
+  totalInitialBalance: number; // Akumulasi total saldo modal/uang awal dompet bawaan
+  totalRealCapital: number; // Akumulasi total uang awal riil = totalInitialBalance + totalIncome
+  totalCurrentBalance: number; // Sisa total saldo kas saat ini
   totalIncome: number;
   totalSavingPlanned: number;
   totalSavingActual: number;
@@ -136,6 +146,7 @@ export interface FinancialOverview {
   totalSubActual: number;
   totalDailyExpense: number;
   totalActualExpense: number;
+  totalOutflow: number; // totalActualExpense + totalSavingActual
   remainingBalance: number;
   remainingBudgetPercent: number;
   savingsRatePercent: number;
