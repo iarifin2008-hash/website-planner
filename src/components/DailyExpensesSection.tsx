@@ -96,20 +96,20 @@ export const DailyExpensesSection: React.FC<DailyExpensesSectionProps> = ({
           <div className="flex items-center gap-2">
             <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
               <TrendingDown className="w-4 h-4 text-rose-500" />
-              <span>Catatan Belanja & Jajan Harian</span>
+              <span>Belanja & Jajan Harian</span>
             </h3>
             <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-rose-100 text-rose-700">
               {currentExpenses.length} Transaksi
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Setiap catatan di bawah ini langsung memotong saldo kas dompet yang Anda pilih
+            Otomatis memotong saldo dompet yang dipilih
           </p>
         </div>
 
         <div className="flex items-center gap-3">
           <div className="text-right hidden sm:block">
-            <span className="text-[11px] text-slate-400 block font-semibold uppercase tracking-wider">Total Jajan Harian</span>
+            <span className="text-[11px] text-slate-400 block font-semibold uppercase tracking-wider">Total Harian</span>
             <span className="text-sm font-extrabold text-rose-600">{formatRupiah(totalDaily)}</span>
           </div>
 
@@ -121,7 +121,7 @@ export const DailyExpensesSection: React.FC<DailyExpensesSectionProps> = ({
             style={{ backgroundColor: theme.primary }}
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>Tambah Jajan</span>
+            <span>+ Catat Jajan</span>
           </button>
         </div>
       </div>

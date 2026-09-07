@@ -51,7 +51,6 @@ import { HaiPlennerVoiceAssistant } from './components/HaiPlennerVoiceAssistant'
 import { MonthlyReportSection } from './components/MonthlyReportSection';
 import { SyncModal } from './components/SyncModal';
 import { SettingsModal } from './components/SettingsModal';
-import { InitialCashSetupModal } from './components/InitialCashSetupModal';
 import { TransferFundsModal } from './components/TransferFundsModal';
 
 import { 
@@ -69,7 +68,8 @@ import {
   X,
   Radio,
   Database,
-  RefreshCw
+  RefreshCw,
+  CalendarDays
 } from 'lucide-react';
 
 export function App() {
@@ -86,7 +86,21 @@ export function App() {
 
   const [months, setMonths] = useState<BudgetMonth[]>(() => {
     const saved = localStorage.getItem('mp_months');
-    return saved ? JSON.parse(saved) : DEFAULT_MONTHS;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length >= 12) {
+          return parsed;
+        } else if (Array.isArray(parsed) && parsed.length > 0) {
+          const existingIds = new Set(parsed.map((p: any) => p.monthId));
+          const missing = DEFAULT_MONTHS.filter(d => !existingIds.has(d.monthId));
+          return [...parsed, ...missing];
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return DEFAULT_MONTHS;
   });
 
   const [activeMonthId, setActiveMonthId] = useState<string>('2026-01');
@@ -137,8 +151,15 @@ export function App() {
   // --- Modals State ---
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
-  const [isInitialCashModalOpen, setIsInitialCashModalOpen] = useState(false);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+  const [isAddMonthModalOpen, setIsAddMonthModalOpen] = useState(false);
+  
+  // New Month Form State
+  const [newMonthForm, setNewMonthForm] = useState({
+    monthName: 'Januari',
+    year: 2027,
+    notes: 'Anggaran Baru'
+  });
   
   // Quick Action Modal States
   const [isQuickIncomeModalOpen, setIsQuickIncomeModalOpen] = useState(false);
@@ -496,6 +517,31 @@ export function App() {
       return w;
     }));
     setIsTransferModalOpen(false);
+  };
+
+  const handleAddNewMonth = (monthName: string, year: number, notes?: string) => {
+    const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+    const monthIndex = monthNames.indexOf(monthName) + 1;
+    const padIndex = monthIndex > 0 ? String(monthIndex).padStart(2, '0') : '01';
+    const newMonthId = `${year}-${padIndex}`;
+
+    if (months.some(m => m.monthId === newMonthId)) {
+      setActiveMonthId(newMonthId);
+      setIsAddMonthModalOpen(false);
+      return;
+    }
+
+    const newMonth: BudgetMonth = {
+      monthId: newMonthId,
+      monthName,
+      year,
+      notes: notes || `Anggaran ${monthName} ${year}`,
+      isClosed: false
+    };
+
+    setMonths(prev => [...prev, newMonth].sort((a, b) => a.monthId.localeCompare(b.monthId)));
+    setActiveMonthId(newMonthId);
+    setIsAddMonthModalOpen(false);
   };
 
   const handleAddFixed = (item: Omit<FixedExpenseItem, 'id' | 'monthId'>) => {
@@ -926,11 +972,11 @@ export function App() {
               {currentTheme.name}
             </span>
             <h2 className="text-sm font-bold text-slate-800">
-              {dashboardTab === 'OVERVIEW' && 'Kas & Dompet Keuangan'}
-              {dashboardTab === 'DAILY' && 'Catatan Belanja & Jajan Harian'}
-              {dashboardTab === 'BUDGET_CALC' && 'Kalkulator Formula Anggaran 50/25/20/5'}
-              {dashboardTab === 'EXPENSES' && 'Kelola Pos Anggaran'}
-              {dashboardTab === 'REPORT' && 'Laporan & Analisis Keuangan'}
+              {dashboardTab === 'OVERVIEW' && 'Kas & Dompet'}
+              {dashboardTab === 'DAILY' && 'Jajan Harian'}
+              {dashboardTab === 'BUDGET_CALC' && 'Formula Anggaran'}
+              {dashboardTab === 'EXPENSES' && 'Pos Anggaran'}
+              {dashboardTab === 'REPORT' && 'Laporan Bulanan'}
             </h2>
           </div>
 
@@ -967,7 +1013,7 @@ export function App() {
         {/* Unified Main Content Canvas */}
         <main className="px-3 sm:px-6 md:px-8 py-4 md:py-6 space-y-4 sm:space-y-6 max-w-7xl mx-auto w-full pb-24 md:pb-12 animate-fadeIn">
           
-          {/* 1. Header Utama: Ringkasan Total Saldo + 2 Kolom Pemasukan & Pengeluaran + 2 Tombol Aksi */}
+          {/* 1. Header Utama: Ringkasan Total Saldo + Pemasukan & Pengeluaran + Tombol Aksi */}
           <BalanceHeroCard
             overview={overview}
             profile={profile}
@@ -977,12 +1023,53 @@ export function App() {
             theme={currentTheme}
             onOpenWalletModal={() => setDashboardTab('OVERVIEW')}
             onOpenSyncModal={() => setIsSyncModalOpen(true)}
-            onOpenInitialCashModal={() => setIsInitialCashModalOpen(true)}
             onQuickIncome={() => setIsQuickIncomeModalOpen(true)}
             onQuickExpense={() => setIsQuickExpenseModalOpen(true)}
           />
 
-          {/* 2. Asisten Suara "Hai Plenner" */}
+          {/* 2. 12-Bulan Anggaran Quick Selector Bar */}
+          <div className="bg-white rounded-2xl p-3 border border-slate-200/80 shadow-2xs">
+            <div className="flex items-center justify-between gap-2 mb-2 px-1">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                <CalendarDays className="w-3.5 h-3.5 text-sky-600" />
+                <span>Bulan Anggaran: <strong className="text-slate-800">{activeMonth.monthName} {activeMonth.year}</strong></span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsAddMonthModalOpen(true)}
+                className="text-xs font-bold text-sky-600 hover:text-sky-800 flex items-center gap-1 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Tambah Bulan</span>
+              </button>
+            </div>
+            
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+              {months.map(m => {
+                const isActive = m.monthId === activeMonthId;
+                const shortName = m.monthName.slice(0, 3);
+                return (
+                  <button
+                    key={m.monthId}
+                    type="button"
+                    onClick={() => setActiveMonthId(m.monthId)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer flex flex-col items-center min-w-[56px] ${
+                      isActive
+                        ? 'bg-slate-900 text-white shadow-xs'
+                        : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/60'
+                    }`}
+                  >
+                    <span>{shortName}</span>
+                    <span className={`text-[9px] font-normal ${isActive ? 'text-slate-300' : 'text-slate-400'}`}>
+                      {m.year}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 3. Asisten Keuangan Suara & Teks */}
           <HaiPlennerVoiceAssistant
             wallets={computedWallets}
             userName={profile.name}
@@ -990,7 +1077,7 @@ export function App() {
             onAutoAddTransaction={handleAutoAddFromAssistant}
           />
 
-          {/* 3. In-page Tab Navigation Pills (Visible on all sizes for easy switching) */}
+          {/* 4. In-page Tab Navigation Pills */}
           <div className="flex items-center gap-1.5 p-1 bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-x-auto text-xs font-semibold scrollbar-none">
             <button
               id="tab-nav-overview"
@@ -1017,7 +1104,7 @@ export function App() {
               }`}
             >
               <TrendingDown className="w-4 h-4 text-rose-500" />
-              <span>Belanja & Jajan ({dailyExpenses.filter(d => d.monthId === activeMonthId).length})</span>
+              <span>Jajan Harian ({dailyExpenses.filter(d => d.monthId === activeMonthId).length})</span>
             </button>
 
             <button
@@ -1031,7 +1118,7 @@ export function App() {
               }`}
             >
               <Sparkles className="w-4 h-4 text-amber-500" />
-              <span>Kalkulator 50/25/20/5</span>
+              <span>Formula 50/25/20/5</span>
             </button>
 
             <button
@@ -1063,7 +1150,7 @@ export function App() {
             </button>
           </div>
 
-          {/* 4. Tab Views */}
+          {/* 5. Tab Views */}
           {dashboardTab === 'OVERVIEW' && (
             <div className="space-y-5">
               <WalletList
@@ -1071,7 +1158,6 @@ export function App() {
                 computedWallets={computedWallets}
                 theme={currentTheme}
                 onUpdateWallets={setWallets}
-                onOpenInitialCashModal={() => setIsInitialCashModalOpen(true)}
                 onOpenTransferModal={() => setIsTransferModalOpen(true)}
               />
 
@@ -1426,18 +1512,88 @@ export function App() {
         onOpenSyncModal={() => setIsSyncModalOpen(true)}
       />
 
-      {/* Dedicated Initial Cash Setup Modal */}
-      <InitialCashSetupModal
-        isOpen={isInitialCashModalOpen}
-        onClose={() => setIsInitialCashModalOpen(false)}
-        wallets={wallets}
-        incomes={incomes}
-        currentMonthId={activeMonthId}
-        activeMonthName={activeMonth.monthName}
-        activeYear={activeMonth.year}
-        theme={currentTheme}
-        onSaveWallets={(updated) => setWallets(updated)}
-      />
+      {/* Add New Budget Month Modal */}
+      {isAddMonthModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-xl border border-slate-200 animate-scaleUp">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <CalendarDays className="w-5 h-5 text-sky-600" />
+                <h3 className="font-bold text-slate-800 text-base">Tambah Bulan Anggaran</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddMonthModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleAddNewMonth(newMonthForm.monthName, Number(newMonthForm.year), newMonthForm.notes);
+              }}
+              className="space-y-3.5"
+            >
+              <div>
+                <label className="text-xs font-semibold text-slate-600 block mb-1">Nama Bulan:</label>
+                <select
+                  value={newMonthForm.monthName}
+                  onChange={e => setNewMonthForm({ ...newMonthForm, monthName: e.target.value })}
+                  className="w-full min-h-[44px] px-3 rounded-xl border border-slate-300 bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:border-sky-500"
+                >
+                  {['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'].map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-600 block mb-1">Tahun:</label>
+                <input
+                  type="number"
+                  required
+                  min="2020"
+                  max="2040"
+                  value={newMonthForm.year}
+                  onChange={e => setNewMonthForm({ ...newMonthForm, year: Number(e.target.value) })}
+                  className="w-full min-h-[44px] px-3 rounded-xl border border-slate-300 bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:border-sky-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-600 block mb-1">Catatan / Target (Opsional):</label>
+                <input
+                  type="text"
+                  placeholder="Misal: Target hemat & bonus tahun baru"
+                  value={newMonthForm.notes}
+                  onChange={e => setNewMonthForm({ ...newMonthForm, notes: e.target.value })}
+                  className="w-full min-h-[44px] px-3 rounded-xl border border-slate-300 bg-white text-xs font-medium text-slate-800 focus:outline-none focus:border-sky-500"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddMonthModalOpen(false)}
+                  className="min-h-[44px] flex-1 py-2.5 rounded-xl border border-slate-300 text-slate-700 text-xs font-bold cursor-pointer hover:bg-slate-50"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="min-h-[44px] flex-1 py-2.5 rounded-xl text-white text-xs font-bold shadow-xs cursor-pointer hover:opacity-95"
+                  style={{ backgroundColor: currentTheme.primary }}
+                >
+                  Simpan Bulan
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Transfer Funds / Pindah Saldo Antar Kas Modal */}
       <TransferFundsModal

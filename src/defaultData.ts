@@ -19,7 +19,16 @@ export const DEFAULT_PROFILE: UserProfile = {
 export const DEFAULT_MONTHS: BudgetMonth[] = [
   { monthId: '2026-01', monthName: 'Januari', year: 2026, notes: 'Anggaran Awal Tahun', isClosed: false },
   { monthId: '2026-02', monthName: 'Februari', year: 2026, notes: 'Anggaran Bulan Kasih Sayang', isClosed: false },
-  { monthId: '2026-03', monthName: 'Maret', year: 2026, notes: 'Anggaran Bulan Berkah', isClosed: false }
+  { monthId: '2026-03', monthName: 'Maret', year: 2026, notes: 'Anggaran Bulan Berkah', isClosed: false },
+  { monthId: '2026-04', monthName: 'April', year: 2026, notes: 'Anggaran Bulan Kemenangan', isClosed: false },
+  { monthId: '2026-05', monthName: 'Mei', year: 2026, notes: 'Anggaran Pertengahan Tahun', isClosed: false },
+  { monthId: '2026-06', monthName: 'Juni', year: 2026, notes: 'Anggaran Liburan & Pertengahan Tahun', isClosed: false },
+  { monthId: '2026-07', monthName: 'Juli', year: 2026, notes: 'Anggaran Semester Baru', isClosed: false },
+  { monthId: '2026-08', monthName: 'Agustus', year: 2026, notes: 'Anggaran Kemerdekaan', isClosed: false },
+  { monthId: '2026-09', monthName: 'September', year: 2026, notes: 'Anggaran Kuartal Tiga', isClosed: false },
+  { monthId: '2026-10', monthName: 'Oktober', year: 2026, notes: 'Anggaran Produktivitas', isClosed: false },
+  { monthId: '2026-11', monthName: 'November', year: 2026, notes: 'Anggaran Menjelang Akhir Tahun', isClosed: false },
+  { monthId: '2026-12', monthName: 'Desember', year: 2026, notes: 'Anggaran Liburan & Evaluasi Tahunan', isClosed: false }
 ];
 
 export const DEFAULT_WALLETS: WalletItem[] = [

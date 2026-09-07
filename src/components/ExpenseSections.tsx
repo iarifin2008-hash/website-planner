@@ -165,7 +165,7 @@ export const ExpenseSections: React.FC<ExpenseSectionsProps> = ({
             }`}
           >
             <Home className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-            <span className="truncate">{isIphone ? `Pokok (${currentFixed.length})` : `Kebutuhan Pokok (${currentFixed.length})`}</span>
+            <span className="truncate">Pokok ({currentFixed.length})</span>
           </button>
 
           <button
@@ -178,7 +178,7 @@ export const ExpenseSections: React.FC<ExpenseSectionsProps> = ({
             }`}
           >
             <ShoppingBag className="w-3.5 h-3.5 text-orange-500 shrink-0" />
-            <span className="truncate">{isIphone ? `Variabel (${currentVar.length})` : `Variabel & Bulanan (${currentVar.length})`}</span>
+            <span className="truncate">Variabel ({currentVar.length})</span>
           </button>
 
           <button
@@ -191,7 +191,7 @@ export const ExpenseSections: React.FC<ExpenseSectionsProps> = ({
             }`}
           >
             <PiggyBank className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-            <span className="truncate">{isIphone ? `Tabungan (${currentSav.length})` : `Tabungan & Investasi (${currentSav.length})`}</span>
+            <span className="truncate">Tabungan ({currentSav.length})</span>
           </button>
 
           <button
@@ -204,7 +204,7 @@ export const ExpenseSections: React.FC<ExpenseSectionsProps> = ({
             }`}
           >
             <Tv className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-            <span className="truncate">{isIphone ? `Langganan (${currentSub.length})` : `Langganan & Cicilan (${currentSub.length})`}</span>
+            <span className="truncate">Langganan ({currentSub.length})</span>
           </button>
         </div>
 

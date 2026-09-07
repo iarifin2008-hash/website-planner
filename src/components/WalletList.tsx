@@ -35,7 +35,6 @@ interface WalletListProps {
   theme: any;
   isIphone?: boolean;
   onUpdateWallets: (wallets: WalletItem[]) => void;
-  onOpenInitialCashModal?: () => void;
   onOpenTransferModal?: () => void;
 }
 
@@ -45,7 +44,6 @@ export const WalletList: React.FC<WalletListProps> = ({
   theme,
   isIphone = false,
   onUpdateWallets,
-  onOpenInitialCashModal,
   onOpenTransferModal
 }) => {
   const [editingWallet, setEditingWallet] = useState<WalletItem | null>(null);
@@ -208,43 +206,28 @@ export const WalletList: React.FC<WalletListProps> = ({
             isIphone ? 'text-sm' : 'text-base'
           }`}>
             <Wallet className="w-4 h-4 text-sky-600 shrink-0" />
-            <span>Rincian Saldo Kas per Dompet</span>
+            <span>Kas & Dompet</span>
           </h3>
           <p className="text-[11px] text-slate-500 mt-0.5">
-            Sinkron otomatis dengan pemasukan & pengeluaran bulanan
+            Sinkron otomatis dengan semua pemasukan & pengeluaran
           </p>
         </div>
 
         <div className={`flex items-center gap-1.5 ${
-          isIphone ? 'w-full grid grid-cols-3' : 'flex-wrap'
+          isIphone ? 'w-full grid grid-cols-2' : 'flex-wrap'
         }`}>
-          {onOpenInitialCashModal && (
-            <button
-              id="btn-open-initial-cash-modal"
-              type="button"
-              onClick={onOpenInitialCashModal}
-              className={`inline-flex items-center justify-center gap-1 py-2 rounded-xl text-[11px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition cursor-pointer ${
-                isIphone ? 'px-1 text-center' : 'px-3'
-              }`}
-              title="Sesuaikan modal saldo awal kas pertama kali"
-            >
-              <Layers className="w-3 h-3 text-sky-600 shrink-0" />
-              <span className="truncate">Modal Awal</span>
-            </button>
-          )}
-
           {onOpenTransferModal && wallets.length >= 2 && (
             <button
               id="btn-open-transfer-modal"
               type="button"
               onClick={onOpenTransferModal}
-              className={`inline-flex items-center justify-center gap-1 py-2 rounded-xl text-[11px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition cursor-pointer ${
-                isIphone ? 'px-1 text-center' : 'px-3'
+              className={`inline-flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition cursor-pointer ${
+                isIphone ? 'px-2 text-center' : 'px-3'
               }`}
-              title="Pindah saldo atau top-up antar kas"
+              title="Pindah saldo antar kas"
             >
-              <ArrowRightLeft className="w-3 h-3 text-emerald-600 shrink-0" />
-              <span className="truncate">Pindah Kas</span>
+              <ArrowRightLeft className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              <span>Pindah Saldo</span>
             </button>
           )}
 
@@ -252,13 +235,13 @@ export const WalletList: React.FC<WalletListProps> = ({
             id="btn-add-wallet"
             type="button"
             onClick={handleStartAdd}
-            className={`inline-flex items-center justify-center gap-1 py-2 rounded-xl text-[11px] font-semibold text-white shadow-xs transition hover:opacity-90 cursor-pointer ${
-              isIphone ? 'px-1 text-center col-span-1' : 'px-3.5'
+            className={`inline-flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold text-white shadow-xs transition hover:opacity-90 cursor-pointer ${
+              isIphone ? 'px-2 text-center' : 'px-3.5'
             }`}
             style={{ backgroundColor: theme.primary }}
           >
-            <Plus className="w-3 h-3 shrink-0" />
-            <span className="truncate">Tambah Kas</span>
+            <Plus className="w-3.5 h-3.5 shrink-0" />
+            <span>Tambah Dompet</span>
           </button>
         </div>
       </div>

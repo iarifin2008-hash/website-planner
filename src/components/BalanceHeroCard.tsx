@@ -53,6 +53,7 @@ export const BalanceHeroCard: React.FC<BalanceHeroCardProps> = ({
   onQuickExpense
 }) => {
   const [showBreakdown, setShowBreakdown] = useState(false);
+  const [showWalletBreakdown, setShowWalletBreakdown] = useState(false);
 
   const formatRupiah = (num: number) => {
     return 'Rp ' + Math.round(num || 0).toLocaleString('id-ID');
@@ -66,10 +67,8 @@ export const BalanceHeroCard: React.FC<BalanceHeroCardProps> = ({
     ? Math.max(0, Math.min(100, Math.round((overview.totalCurrentBalance / totalInflowPool) * 100)))
     : 0;
 
-  const usedRatio = 100 - remainingRatio;
-
   // Personalized advice message
-  let personalizedAdvice = `Halo ${profile.name || 'Sobat Cuan'}, keuangan kasmu dalam kondisi sangat sehat!`;
+  let personalizedAdvice = `Halo ${profile.name || 'Sobat Cuan'}, keuangan kasmu dalam kondisi sehat dan tersinkronisasi!`;
   if (remainingRatio < 25) {
     personalizedAdvice = `Perhatian ${profile.name || 'Sobat Cuan'}, sisa saldo kas aktifmu tersisa ${remainingRatio}%. Batasi jajan harian ya!`;
   } else if (overview.savingsRatePercent >= 20) {
@@ -148,13 +147,17 @@ export const BalanceHeroCard: React.FC<BalanceHeroCardProps> = ({
         </button>
       </div>
 
-      {/* 1. HEADER UTAMA: TOTAL SALDO BERUKURAN BESAR */}
-      <div className="relative z-10 bg-white/90 backdrop-blur-sm rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-xs mb-4">
+      {/* 1. HEADER UTAMA: TOTAL SALDO BERSIH */}
+      <div className="relative z-10 bg-white/95 backdrop-blur-sm rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-xs mb-4">
         <div className="flex items-center justify-between gap-2 mb-1">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-            <Wallet className="w-4 h-4 text-sky-600" />
-            <span>Total Saldo Bersih Aktif</span>
-          </span>
+          <div className="flex items-center gap-1.5">
+            <div className="w-6 h-6 rounded-lg bg-sky-100 flex items-center justify-center text-sky-700">
+              <Wallet className="w-3.5 h-3.5" />
+            </div>
+            <span className="text-xs sm:text-sm font-bold uppercase tracking-wider text-slate-700">
+              Total Saldo Bersih
+            </span>
+          </div>
           <span 
             className="text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap"
             style={{ 
@@ -166,20 +169,54 @@ export const BalanceHeroCard: React.FC<BalanceHeroCardProps> = ({
           </span>
         </div>
 
+        {/* Large Currency Number */}
         <div className="text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight font-mono py-1">
           {formatRupiah(overview.totalCurrentBalance)}
         </div>
 
-        <div className="flex items-center justify-between text-[11px] text-slate-500 mt-1">
-          <span>Dari total modal kas & pemasukan: <strong>{formatRupiah(overview.totalRealCapital)}</strong></span>
+        {/* Informative Synchronized Breakdown Line */}
+        <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-500 mt-1 gap-2 border-t border-slate-100 pt-2">
+          <span>
+            Saldo riil dari <strong>{computedWallets.length} akun kas</strong>
+          </span>
           <button
             type="button"
-            onClick={onOpenInitialCashModal || onOpenWalletModal}
-            className="text-sky-600 hover:text-sky-800 font-semibold underline cursor-pointer"
+            onClick={() => setShowWalletBreakdown(!showWalletBreakdown)}
+            className="text-sky-600 hover:text-sky-800 font-bold underline cursor-pointer flex items-center gap-0.5"
           >
-            Atur Modal Awal
+            <span>{showWalletBreakdown ? 'Tutup Rincian' : 'Rincian per Dompet'}</span>
+            {showWalletBreakdown ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
           </button>
         </div>
+
+        {/* Expandable Wallet-by-Wallet Balance Breakdown */}
+        {showWalletBreakdown && (
+          <div className="mt-3 pt-3 border-t border-slate-100 space-y-2 animate-fadeIn">
+            <div className="text-[11px] font-bold text-slate-700 flex items-center justify-between">
+              <span>Rincian Saldo Akun:</span>
+              <span className="text-emerald-600 font-mono font-bold">{formatRupiah(overview.totalCurrentBalance)}</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+              {computedWallets.map(w => (
+                <div 
+                  key={w.id}
+                  className="p-2.5 bg-slate-50 rounded-xl border border-slate-200/80 flex items-center justify-between text-xs"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span 
+                      className="w-2.5 h-2.5 rounded-full shrink-0"
+                      style={{ backgroundColor: w.colorHex || theme.primary }}
+                    />
+                    <span className="font-semibold text-slate-800 truncate">{w.name}</span>
+                  </div>
+                  <span className={`font-mono font-bold shrink-0 ${w.isNegative ? 'text-rose-600' : 'text-slate-900'}`}>
+                    {formatRupiah(w.computedBalance)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Progress Bar of Cash Balance */}
         <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden flex mt-2.5">
@@ -193,22 +230,23 @@ export const BalanceHeroCard: React.FC<BalanceHeroCardProps> = ({
         </div>
       </div>
 
-      {/* 2. DUA KOLOM INFO KECIL: TOTAL PEMASUKAN & TOTAL PENGELUARAN */}
+      {/* 2. DUA KOLOM INFO KECIL: TOTAL GAJI/PEMASUKAN & TOTAL PENGELUARAN */}
       <div className="relative z-10 grid grid-cols-2 gap-3 mb-4">
         
-        {/* Kolom Info 1: Total Pemasukan */}
+        {/* Kolom Info 1: Total Gaji / Pemasukan Tersinkronasi */}
         <div className="bg-emerald-50/90 border border-emerald-200/90 rounded-2xl p-3.5 flex flex-col justify-between shadow-2xs">
           <div className="flex items-center gap-1.5 text-emerald-800 text-[11px] font-bold uppercase tracking-wider mb-1">
             <div className="w-5 h-5 rounded-lg bg-emerald-200/70 flex items-center justify-center shrink-0">
               <TrendingUp className="w-3.5 h-3.5 text-emerald-700" />
             </div>
-            <span className="truncate">Total Pemasukan</span>
+            <span className="truncate">Gaji & Pemasukan</span>
           </div>
           <div className="text-base sm:text-xl font-extrabold text-emerald-700 font-mono tracking-tight">
             +{formatRupiah(overview.totalIncome)}
           </div>
-          <div className="text-[10px] text-emerald-700/80 mt-1 truncate">
-            Bulan {activeMonthName}
+          <div className="text-[10px] text-emerald-700/90 mt-1 truncate flex items-center gap-1">
+            <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+            <span>Tersinkron langsung ke kas dompet</span>
           </div>
         </div>
 
@@ -233,16 +271,16 @@ export const BalanceHeroCard: React.FC<BalanceHeroCardProps> = ({
             -{formatRupiah(overview.totalOutflow)}
           </div>
           <div className="text-[10px] text-rose-700/80 mt-1 truncate">
-            Jajan + Pos + Tabungan
+            Jajan + Pos Pokok/Variabel + Tabungan
           </div>
         </div>
 
       </div>
 
-      {/* 3. TOMBOL AKSI CEPAT: + PEMASUKAN (HIJAU) & - PENGELUARAN (MERAH) */}
+      {/* 3. TOMBOL AKSI CEPAT: + PEMASUKAN / GAJI & - PENGELUARAN */}
       <div className="relative z-10 flex flex-col sm:flex-row items-stretch gap-2.5 w-full">
         
-        {/* Tombol Hijau: + Pemasukan */}
+        {/* Tombol Hijau: + Gaji / Pemasukan */}
         <button
           id="btn-quick-income"
           type="button"
@@ -252,7 +290,7 @@ export const BalanceHeroCard: React.FC<BalanceHeroCardProps> = ({
           <div className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center">
             <Plus className="w-3.5 h-3.5 text-white" />
           </div>
-          <span>+ Tambah Pemasukan</span>
+          <span>+ Catat Gaji / Pemasukan</span>
         </button>
 
         {/* Tombol Merah: - Pengeluaran */}
