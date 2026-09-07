@@ -1,29 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { UserProfile } from '../types';
 import { THEME_PRESETS } from '../defaultData';
+import { getSupabaseConfig } from '../lib/supabase';
 import { 
-  requestEmailOtp, 
-  verifyEmailOtp, 
-  getSupabaseConfig 
-} from '../lib/supabase';
-import { 
-  Wallet, 
+  Wallet,
   Smartphone, 
   User, 
-  Key, 
   ArrowRight, 
   Sparkles, 
-  Palette, 
-  Check, 
-  ShieldCheck, 
-  PlayCircle, 
   Mail, 
   Lock, 
   RotateCw, 
   Database, 
   CheckCircle2, 
   AlertCircle,
-  HelpCircle
+  PlayCircle
 } from 'lucide-react';
 
 interface AuthGateProps {
@@ -46,12 +37,9 @@ export const AuthGate: React.FC<AuthGateProps> = ({
   const [selectedThemeKey, setSelectedThemeKey] = useState<string>(profile.themePreset || 'SHARK_BLUE');
   const activeTheme = THEME_PRESETS[selectedThemeKey] || THEME_PRESETS.SHARK_BLUE;
 
-  // Supabase OTP States
-  const [otpStep, setOtpStep] = useState<'INPUT_EMAIL' | 'INPUT_OTP'>('INPUT_EMAIL');
+  // Form Inputs & UI States
   const [emailInput, setEmailInput] = useState(profile.email || '');
-  const [otpTokenInput, setOtpTokenInput] = useState('');
   const [nameInput, setNameInput] = useState(profile.name || '');
-  const [countdown, setCountdown] = useState<number>(0);
 
   // Sync Code & Other Form states
   const [syncCodeInput, setSyncCodeInput] = useState('');
@@ -66,15 +54,6 @@ export const AuthGate: React.FC<AuthGateProps> = ({
   const [customSupabaseUrl, setCustomSupabaseUrl] = useState(() => localStorage.getItem('mp_supabase_url') || '');
   const [customSupabaseKey, setCustomSupabaseKey] = useState(() => localStorage.getItem('mp_supabase_anon_key') || '');
   const [supabaseStatus, setSupabaseStatus] = useState(() => getSupabaseConfig());
-
-  // Handle countdown timer for OTP resend
-  useEffect(() => {
-    if (countdown <= 0) return;
-    const timer = setInterval(() => {
-      setCountdown(prev => (prev > 0 ? prev - 1 : 0));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [countdown]);
 
   const handleSaveCustomSupabaseConfig = (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,8 +72,8 @@ export const AuthGate: React.FC<AuthGateProps> = ({
     setTimeout(() => setSuccessMsg(''), 3000);
   };
 
-  // 1. Kirim Kode Verifikasi OTP ke Email
-  const handleRequestOtp = async (e: React.FormEvent) => {
+  // 1. Bypass Auth: Masuk Langsung ke Dashboard & Simpan ke Local Storage (Tanpa Memanggil API Supabase Auth)
+  const handleRequestOtp = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
     setSuccessMsg('');
@@ -107,76 +86,35 @@ export const AuthGate: React.FC<AuthGateProps> = ({
     }
 
     setIsLoading(true);
+
+    const derivedName = nameInput.trim() || email.split('@')[0] || 'Sobat Cuan';
+    const derivedSyncCode = profile.syncCode || `CUAN-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    const updated: UserProfile = {
+      ...profile,
+      name: derivedName,
+      email: email,
+      isLoggedIn: true,
+      themePreset: selectedThemeKey,
+      syncCode: derivedSyncCode,
+      supabaseEmail: email,
+      lastSyncedAt: new Date().toLocaleDateString('id-ID')
+    };
+
+    // Langsung simpan ke localStorage secara instan
     try {
-      const res = await requestEmailOtp(email);
-      setIsLoading(false);
-
-      if (res.error) {
-        setErrorMsg(`Gagal mengirim kode OTP: ${res.error.message}`);
-        return;
-      }
-
-      setOtpStep('INPUT_OTP');
-      setCountdown(60);
-      setSuccessMsg(`Kode verifikasi OTP telah dikirim ke ${email}.`);
-      if (res.isSimulated) {
-        setInfoMsg('Mode Demo / Offline: Anda dapat memasukkan 6 digit angka apa saja (cth: 123456) untuk verifikasi instan.');
-      }
-    } catch (err: any) {
-      setIsLoading(false);
-      setErrorMsg(err?.message || 'Terjadi kendala saat mengirim email OTP.');
-    }
-  };
-
-  // 2. Verifikasi Kode OTP & Masuk
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMsg('');
-    setSuccessMsg('');
-    setInfoMsg('');
-
-    const email = emailInput.trim().toLowerCase();
-    const token = otpTokenInput.trim();
-
-    if (!token || token.length < 4) {
-      setErrorMsg('Harap masukkan kode OTP verifikasi dengan lengkap (6 angka).');
-      return;
+      localStorage.setItem('mp_profile', JSON.stringify(updated));
+    } catch (err) {
+      console.warn('Gagal menyimpan ke localStorage:', err);
     }
 
-    setIsLoading(true);
-    try {
-      const res = await verifyEmailOtp(email, token);
+    setSuccessMsg(`Login instan berhasil! Mengalihkan ke Dashboard Utama...`);
+
+    // Langsung arahkan ke Dashboard Utama Money Planner
+    setTimeout(() => {
       setIsLoading(false);
-
-      if (res.error) {
-        setErrorMsg(`Verifikasi OTP gagal: ${res.error.message}`);
-        return;
-      }
-
-      const user = res.data?.user;
-      const derivedName = nameInput.trim() || user?.user_metadata?.name || email.split('@')[0];
-      const derivedSyncCode = profile.syncCode || `CUAN-${Math.floor(1000 + Math.random() * 9000)}`;
-
-      const updated: UserProfile = {
-        ...profile,
-        name: derivedName,
-        email: email,
-        isLoggedIn: true,
-        themePreset: selectedThemeKey,
-        syncCode: derivedSyncCode,
-        supabaseUserId: user?.id,
-        supabaseEmail: email,
-        lastSyncedAt: new Date().toLocaleDateString('id-ID')
-      };
-
-      setSuccessMsg(`Verifikasi berhasil! Selamat datang, ${derivedName}.`);
-      setTimeout(() => {
-        onLoginSuccess(updated, derivedSyncCode);
-      }, 500);
-    } catch (err: any) {
-      setIsLoading(false);
-      setErrorMsg(err?.message || 'Terjadi kesalahan saat memverifikasi kode OTP.');
-    }
+      onLoginSuccess(updated, derivedSyncCode);
+    }, 400);
   };
 
   const handleSyncCodeLogin = (e: React.FormEvent) => {
@@ -294,7 +232,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({
                 Halo <span style={{ color: activeTheme.primary }}>{nameInput.trim()}</span>! Senang bertemu denganmu 👋
               </span>
             ) : (
-              'Masuk dengan OTP Email & Sinkronkan transaksi otomatis secara real-time.'
+              'Masuk instan dengan Email & kelola perencanaan keuangan Anda.'
             )}
           </p>
         </div>
@@ -312,7 +250,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({
             }`}
           >
             <Mail className="w-3.5 h-3.5 text-sky-600" />
-            <span className="truncate">OTP Email</span>
+            <span className="truncate">Email</span>
           </button>
 
           <button
@@ -370,143 +308,67 @@ export const AuthGate: React.FC<AuthGateProps> = ({
         {authMode === 'EMAIL_OTP' && (
           <div className="space-y-4">
             
-            {/* Step 1: Input Email -> Minta Kode Verifikasi */}
-            {otpStep === 'INPUT_EMAIL' ? (
-              <form onSubmit={handleRequestOtp} className="space-y-3.5">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
-                    <span>Alamat Email Anda</span>
-                    <span className="text-[10px] text-slate-400">Kode OTP akan dikirim ke sini</span>
-                  </label>
-                  <div className="relative">
-                    <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      id="input-supabase-email"
-                      type="email"
-                      required
-                      placeholder="contoh: nama.anda@gmail.com"
-                      value={emailInput}
-                      onChange={e => setEmailInput(e.target.value)}
-                      className="w-full min-h-[44px] bg-slate-50 border border-slate-300 rounded-xl py-2.5 pl-10 pr-4 text-xs sm:text-sm text-slate-900 focus:outline-none focus:bg-white focus:ring-2 focus:ring-sky-500 transition font-medium"
-                    />
-                  </div>
+            {/* Step 1: Input Email -> Masuk ke Dashboard (Bypass Auth / Instan) */}
+            <form onSubmit={handleRequestOtp} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+                  <span>Alamat Email Anda</span>
+                  <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                    <span>Login Instan (Bypass OTP)</span>
+                  </span>
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    id="input-supabase-email"
+                    type="email"
+                    required
+                    placeholder="contoh: nama.anda@gmail.com"
+                    value={emailInput}
+                    onChange={e => setEmailInput(e.target.value)}
+                    className="w-full min-h-[44px] bg-slate-50 border border-slate-300 rounded-xl py-2.5 pl-10 pr-4 text-xs sm:text-sm text-slate-900 focus:outline-none focus:bg-white focus:ring-2 focus:ring-sky-500 transition font-medium"
+                  />
                 </div>
+              </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    Nama Panggilan (Opsional)
-                  </label>
-                  <div className="relative">
-                    <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      placeholder="Misal: Arifin, Budi, Sarah"
-                      value={nameInput}
-                      onChange={e => setNameInput(e.target.value)}
-                      className="w-full min-h-[44px] bg-slate-50 border border-slate-300 rounded-xl py-2.5 pl-10 pr-4 text-xs sm:text-sm text-slate-800 focus:outline-none focus:bg-white focus:ring-2 focus:ring-sky-500 transition"
-                    />
-                  </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Nama Panggilan (Opsional)
+                </label>
+                <div className="relative">
+                  <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Misal: Arifin, Budi, Sarah"
+                    value={nameInput}
+                    onChange={e => setNameInput(e.target.value)}
+                    className="w-full min-h-[44px] bg-slate-50 border border-slate-300 rounded-xl py-2.5 pl-10 pr-4 text-xs sm:text-sm text-slate-800 focus:outline-none focus:bg-white focus:ring-2 focus:ring-sky-500 transition"
+                  />
                 </div>
+              </div>
 
-                <button
-                  id="btn-request-otp"
-                  type="submit"
-                  disabled={isLoading}
-                  className="w-full min-h-[44px] py-3 rounded-2xl text-xs sm:text-sm font-bold text-white shadow-md hover:opacity-95 active:scale-[0.99] transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 mt-2"
-                  style={{ backgroundColor: activeTheme.primary }}
-                >
-                  {isLoading ? (
-                    <>
-                      <RotateCw className="w-4 h-4 animate-spin" />
-                      <span>Mengirim Kode OTP...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Mail className="w-4 h-4" />
-                      <span>Minta Kode Verifikasi</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </>
-                  )}
-                </button>
-              </form>
-            ) : (
-              /* Step 2: Input Kotak OTP -> Tombol "Verifikasi & Masuk" */
-              <form onSubmit={handleVerifyOtp} className="space-y-4">
-                <div className="p-3 bg-sky-50/70 border border-sky-200/80 rounded-2xl text-xs text-sky-900 flex items-center justify-between">
-                  <div className="min-w-0 pr-2">
-                    <span className="block text-[11px] text-slate-500">Email Tujuan:</span>
-                    <span className="font-bold truncate block">{emailInput}</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => { setOtpStep('INPUT_EMAIL'); setErrorMsg(''); setInfoMsg(''); }}
-                    className="text-[11px] text-sky-700 hover:text-sky-900 font-bold underline shrink-0 cursor-pointer"
-                  >
-                    Ganti Email
-                  </button>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
-                    <span>Masukkan 6 Digit Kode Angka OTP</span>
-                    {countdown > 0 ? (
-                      <span className="text-[10px] text-slate-400 font-mono">Kirim ulang ({countdown}s)</span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={handleRequestOtp}
-                        className="text-[11px] text-sky-600 font-bold hover:underline cursor-pointer"
-                      >
-                        Kirim Ulang Kode
-                      </button>
-                    )}
-                  </label>
-                  <div className="relative">
-                    <Key className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      id="input-otp-code"
-                      type="text"
-                      required
-                      maxLength={8}
-                      placeholder="123456"
-                      value={otpTokenInput}
-                      onChange={e => setOtpTokenInput(e.target.value.replace(/\s+/g, ''))}
-                      className="w-full min-h-[44px] bg-slate-50 border-2 border-sky-300 rounded-xl py-2.5 pl-10 pr-4 text-center text-base sm:text-lg font-mono tracking-widest font-extrabold text-slate-900 focus:outline-none focus:bg-white focus:border-sky-600 transition"
-                      autoFocus
-                    />
-                  </div>
-                </div>
-
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setOtpStep('INPUT_EMAIL')}
-                    className="min-h-[44px] py-2.5 px-4 rounded-xl border border-slate-300 text-slate-700 text-xs font-bold hover:bg-slate-50 cursor-pointer"
-                  >
-                    Kembali
-                  </button>
-                  <button
-                    id="btn-verify-otp"
-                    type="submit"
-                    disabled={isLoading}
-                    className="flex-1 min-h-[44px] py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold text-white shadow-md hover:opacity-95 active:scale-[0.99] transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                    style={{ backgroundColor: activeTheme.primary }}
-                  >
-                    {isLoading ? (
-                      <>
-                        <RotateCw className="w-4 h-4 animate-spin" />
-                        <span>Memverifikasi...</span>
-                      </>
-                    ) : (
-                      <>
-                        <ShieldCheck className="w-4 h-4" />
-                        <span>Verifikasi & Masuk</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
-            )}
+              <button
+                id="btn-request-otp"
+                type="submit"
+                disabled={isLoading}
+                className="w-full min-h-[44px] py-3 rounded-2xl text-xs sm:text-sm font-bold text-white shadow-md hover:opacity-95 active:scale-[0.99] transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 mt-2"
+                style={{ backgroundColor: activeTheme.primary }}
+              >
+                {isLoading ? (
+                  <>
+                    <RotateCw className="w-4 h-4 animate-spin" />
+                    <span>Masuk ke Dashboard...</span>
+                  </>
+                ) : (
+                  <>
+                    <Mail className="w-4 h-4" />
+                    <span>Minta Kode Verifikasi & Masuk Langsung</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+            </form>
 
             {/* Collapsible Supabase Status & Setup Guide */}
             <div className="pt-3 border-t border-slate-100">
