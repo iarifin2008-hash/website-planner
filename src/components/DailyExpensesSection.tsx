@@ -49,13 +49,13 @@ export const DailyExpensesSection: React.FC<DailyExpensesSectionProps> = ({
   const currentExpenses = expenses.filter(e => e.monthId === currentMonthId);
   const totalDaily = currentExpenses.reduce((acc, curr) => acc + (Number(curr.totalAmount) || 0), 0);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    e.stopPropagation();
+    if (e.stopPropagation) e.stopPropagation();
     if (!title.trim() || !unitPrice || Number(unitPrice) <= 0) return;
 
     const total = (Number(quantity) || 1) * Number(unitPrice);
-    onAddExpense({
+    await onAddExpense({
       monthId: currentMonthId,
       date: date || new Date().toLocaleDateString('id-ID'),
       title: title.trim(),

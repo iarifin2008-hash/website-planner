@@ -81,13 +81,13 @@ export const BudgetCalculator: React.FC<BudgetCalculatorProps> = ({
     setWalletName(item.walletName);
   };
 
-  const handleIncomeSubmit = (e: React.FormEvent) => {
+  const handleIncomeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    e.stopPropagation();
+    if (e.stopPropagation) e.stopPropagation();
     if (!source.trim() || !amount || Number(amount) <= 0) return;
 
     if (editingIncome && onUpdateIncome) {
-      onUpdateIncome({
+      await onUpdateIncome({
         ...editingIncome,
         source: source.trim(),
         type,
@@ -96,7 +96,7 @@ export const BudgetCalculator: React.FC<BudgetCalculatorProps> = ({
       });
       setEditingIncome(null);
     } else {
-      onAddIncome({
+      await onAddIncome({
         monthId: currentMonthId,
         source: source.trim(),
         type,

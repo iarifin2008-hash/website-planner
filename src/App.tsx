@@ -151,8 +151,8 @@ export function App() {
     localStorage.setItem('mp_profile', JSON.stringify(profile));
   }, [profile]);
 
-  // --- 2. AMBIL DATA DARI SUPABASE (READ) DARI 4 TABEL: WALLETS, INCOMES, BUDGETS, TRANSACTIONS ---
-  const loadFinancialData = useCallback(async (syncCode?: string, userId?: string) => {
+  // --- 2. FUNGSI FETCH DATA DARI SUPABASE SECARA BACKGROUND (fetchData) ---
+  const fetchData = useCallback(async (syncCode?: string, userId?: string) => {
     const code = syncCode || profile.syncCode;
     if (!code && !userId) return;
 
@@ -173,11 +173,46 @@ export function App() {
       }
       setWallets(supaWallets);
 
-      // 2. Ambil data pemasukan dari tabel 'incomes'
-      const supaIncomes = await fetchIncomesFromSupabase(code, userId);
-      setIncomes(supaIncomes);
+      // 2. Ambil data transaksi dari tabel 'transactions'
+      const supaTransactions = await fetchTransactionsFromSupabase(code, userId);
+      
+      // Ambil transaksi pengeluaran (semua transaksi selain INCOME)
+      const expenseList = supaTransactions.filter((row: any) => row.type !== 'INCOME');
+      setDailyExpenses(expenseList);
 
-      // 3. Ambil data pos anggaran & alokasi dari tabel 'budgets'
+      // 3. Ambil data pemasukan dari tabel 'incomes'
+      const supaIncomes = await fetchIncomesFromSupabase(code, userId);
+
+      // Ambil juga jika ada transaksi pemasukan (type === 'INCOME') di tabel 'transactions'
+      let queryTx = supabase.from('transactions').select('*');
+      if (code) {
+        queryTx = queryTx.eq('sync_code', code);
+      } else if (userId && isValidUuid(userId)) {
+        queryTx = queryTx.eq('user_id', userId);
+      }
+      const { data: allTxRows } = await queryTx;
+
+      const txIncomes: IncomeItem[] = (allTxRows || [])
+        .filter((r: any) => r.type === 'INCOME')
+        .map((r: any) => ({
+          id: String(r.id),
+          monthId: r.month_id ?? r.monthId ?? activeMonthId,
+          source: r.title || 'Pemasukan',
+          type: (r.category as any) || 'Utama',
+          amount: Number(r.amount) || 0,
+          date: r.date || new Date().toLocaleDateString('id-ID'),
+          walletName: r.wallet_name ?? r.walletName ?? 'Saldo Rekening BCA'
+        }));
+
+      // Gabungkan data incomes dari tabel incomes dan tabel transactions tanpa duplikasi ID
+      const incomeMap = new Map<string, IncomeItem>();
+      supaIncomes.forEach(inc => incomeMap.set(inc.id, inc));
+      txIncomes.forEach(inc => incomeMap.set(inc.id, inc));
+      const combinedIncomes = Array.from(incomeMap.values());
+      
+      setIncomes(combinedIncomes);
+
+      // 4. Ambil data pos anggaran & alokasi dari tabel 'budgets'
       const supaBudgets = await fetchBudgetsFromSupabase(code, userId);
       if (supaBudgets.allocations.length > 0) {
         setAllocations(supaBudgets.allocations);
@@ -187,17 +222,16 @@ export function App() {
       setSavings(supaBudgets.savings);
       setSubscriptions(supaBudgets.subscriptions);
 
-      // 4. Ambil data transaksi/pengeluaran dari tabel 'transactions'
-      const supaTransactions = await fetchTransactionsFromSupabase(code, userId);
-      setDailyExpenses(supaTransactions);
-
       setIsSupabaseLive(true);
     } catch (err) {
       console.error('Gagal mengambil data keuangan dari Supabase:', err);
     } finally {
       setIsSyncingSupabase(false);
     }
-  }, [profile.syncCode]);
+  }, [profile.syncCode, activeMonthId]);
+
+  // Alias kompatibilitas
+  const loadFinancialData = fetchData;
 
   // --- 3. SINKRONISASI REAL-TIME DENGAN SUPABASE CHANNEL UNTUK 4 TABEL ---
   useEffect(() => {
@@ -246,8 +280,16 @@ export function App() {
       };
     }
 
-    // Ambil data pertama kali dari Supabase
-    loadFinancialData(code, userId);
+    // Ambil data pertama kali dari Supabase via fetchData()
+    fetchData(code, userId);
+
+    let debounceTimer: any = null;
+    const triggerBackgroundFetch = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        fetchData(code, userId);
+      }, 350);
+    };
 
     // Setup real-time channel subscription untuk tabel wallets, incomes, budgets, transactions
     const cleanCode = (code || 'global').replace(/[^a-zA-Z0-9]/g, '');
@@ -255,19 +297,19 @@ export function App() {
       .channel(`mp_sync_${cleanCode}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'wallets' }, (payload) => {
         console.log('Realtime change in wallets:', payload);
-        loadFinancialData(code, userId);
+        triggerBackgroundFetch();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'incomes' }, (payload) => {
         console.log('Realtime change in incomes:', payload);
-        loadFinancialData(code, userId);
+        triggerBackgroundFetch();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'budgets' }, (payload) => {
         console.log('Realtime change in budgets:', payload);
-        loadFinancialData(code, userId);
+        triggerBackgroundFetch();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, (payload) => {
         console.log('Realtime change in transactions:', payload);
-        loadFinancialData(code, userId);
+        triggerBackgroundFetch();
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
@@ -278,10 +320,11 @@ export function App() {
       });
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       authListener.subscription.unsubscribe();
       supabase.removeChannel(channel);
     };
-  }, [profile.syncCode, profile.supabaseUserId, loadFinancialData, profile.isLoggedIn]);
+  }, [profile.syncCode, profile.supabaseUserId, fetchData, profile.isLoggedIn]);
 
   // --- Active Month Object ---
   const activeMonth = useMemo(() => {
@@ -386,7 +429,7 @@ export function App() {
 
     // 1. Jalankan fungsi await supabase.from('transactions').insert([...]) untuk mengirim data ke Supabase
     try {
-      await supabase.from('transactions').insert([{
+      const { error } = await supabase.from('transactions').insert([{
         id: newId,
         sync_code: code,
         user_id: userId && isValidUuid(userId) ? userId : null,
@@ -401,6 +444,9 @@ export function App() {
         date: newItem.date || new Date().toLocaleDateString('id-ID'),
         notes: newItem.notes || ''
       }]);
+      if (error) {
+        console.error('Error insert transaction to Supabase:', error.message);
+      }
     } catch (err) {
       console.error('Error insert transaction to Supabase:', err);
     }
@@ -408,8 +454,8 @@ export function App() {
     // 2. Setelah data berhasil masuk ke database, perbarui state saldo di layar secara langsung (state update) tanpa me-refresh browser
     setDailyExpenses(prev => [expense, ...prev]);
 
-    // 3. Panggil fungsi fetch ulang di background agar perangkat lain (HP, tablet, laptop) tersinkronisasi
-    loadFinancialData(code, userId).catch(console.error);
+    // 3. Panggil fungsi fetchData() secara background untuk memperbarui angka saldo di layar
+    fetchData(code, userId).catch(console.error);
   };
 
   const handleDeleteDailyExpense = async (id: string) => {
@@ -423,7 +469,7 @@ export function App() {
     } catch (err) {
       console.error('Error delete transaction from Supabase:', err);
     }
-    loadFinancialData(code, userId).catch(console.error);
+    fetchData(code, userId).catch(console.error);
   };
 
   const handleAddIncome = async (item: Omit<IncomeItem, 'id' | 'monthId'>, e: any = { preventDefault: () => {} }) => {
@@ -441,7 +487,7 @@ export function App() {
     const code = profile.syncCode;
     const userId = profile.supabaseUserId;
 
-    // 1. Insert langsung ke tabel incomes dan transactions di Supabase
+    // 1. Insert langsung ke tabel incomes dan transactions di Supabase dengan await
     try {
       await supabase.from('incomes').insert([{
         id: newId,
@@ -477,8 +523,8 @@ export function App() {
     // 2. Pembaruan State Langsung di layar tanpa reload
     setIncomes(prev => [newInc, ...prev]);
 
-    // 3. Panggil fungsi fetch ulang di background
-    loadFinancialData(code, userId).catch(console.error);
+    // 3. Panggil fungsi fetchData() secara background untuk memperbarui angka saldo di layar
+    fetchData(code, userId).catch(console.error);
   };
 
   const handleUpdateIncome = async (updated: IncomeItem) => {
@@ -841,8 +887,8 @@ export function App() {
     });
     setIsQuickExpenseModalOpen(false);
 
-    // Sync background ke Supabase
-    loadFinancialData(code, userId).catch(console.error);
+    // 3. Panggil fungsi fetchData() secara background untuk memperbarui angka saldo di layar
+    fetchData(code, userId).catch(console.error);
   };
 
   const handleQuickExpenseSubmit = handleSubmit;
@@ -873,7 +919,7 @@ export function App() {
       walletName: chosenWallet
     };
 
-    // 1. Jalankan insert ke Supabase (tabel incomes & transactions)
+    // 1. Jalankan insert ke Supabase (tabel incomes & transactions) dengan await
     try {
       await supabase.from('incomes').insert([{
         id: newId,
@@ -918,7 +964,8 @@ export function App() {
     });
     setIsQuickIncomeModalOpen(false);
 
-    loadFinancialData(code, userId).catch(console.error);
+    // 3. Panggil fungsi fetchData() secara background untuk memperbarui angka saldo di layar
+    fetchData(code, userId).catch(console.error);
   };
 
   // If user is not logged in, render the clean pastel AuthGate

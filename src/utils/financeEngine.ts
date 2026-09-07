@@ -72,13 +72,14 @@ export function matchWallet(itemWalletName: string | undefined, wallet: WalletIt
   if (cleanWallet.includes('jago') && cleanItem.includes('jago')) return true;
   if (cleanWallet.includes('ovo') && cleanItem.includes('ovo')) return true;
 
-  // 4. Fallback to default wallet if no match exists anywhere
+  // 4. Fallback to default or first wallet if no match exists anywhere
   const anyMatchExists = allWallets.some(w => {
     const cw = w.name.trim().toLowerCase();
     return cw === cleanItem || (cw.includes('bca') && cleanItem.includes('bca')) || (cw.includes('dana') && cleanItem.includes('dana'));
   });
 
-  if (!anyMatchExists && wallet.isDefault) {
+  const isFallbackWallet = wallet.isDefault || (!allWallets.some(w => w.isDefault) && allWallets[0]?.id === wallet.id);
+  if (!anyMatchExists && isFallbackWallet) {
     return true;
   }
 
