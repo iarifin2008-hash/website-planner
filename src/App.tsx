@@ -233,15 +233,21 @@ export function App() {
   // Alias kompatibilitas
   const loadFinancialData = fetchData;
 
-  // --- 3. SINKRONISASI REAL-TIME DENGAN SUPABASE CHANNEL UNTUK 4 TABEL ---
+  const profileRef = React.useRef(profile);
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
+
+  // --- 3. SINKRONISASI DATA SUPABASE SAAT KOMPONEN PERTAMA KALI DIMUAT (HANYA 1 KALI) ---
   useEffect(() => {
     const config = getSupabaseConfig();
-    const code = profile.syncCode;
-    const userId = profile.supabaseUserId;
+    const currentProf = profileRef.current;
+    const code = currentProf.syncCode;
+    const userId = currentProf.supabaseUserId;
 
     // Check existing Supabase auth session
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user && !profile.isLoggedIn) {
+      if (session?.user && !profileRef.current.isLoggedIn) {
         setProfile(prev => ({
           ...prev,
           isLoggedIn: true,
@@ -287,7 +293,8 @@ export function App() {
     const triggerBackgroundFetch = () => {
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
-        fetchData(code, userId);
+        const cProf = profileRef.current;
+        fetchData(cProf.syncCode, cProf.supabaseUserId);
       }, 350);
     };
 
@@ -324,7 +331,7 @@ export function App() {
       authListener.subscription.unsubscribe();
       supabase.removeChannel(channel);
     };
-  }, [profile.syncCode, profile.supabaseUserId, fetchData, profile.isLoggedIn]);
+  }, []); // ✅ Kosongkan kotak array ini agar tidak memicu loop reload saldo ke 0
 
   // --- Active Month Object ---
   const activeMonth = useMemo(() => {
@@ -1582,7 +1589,7 @@ export function App() {
               </button>
             </div>
 
-            <form onSubmit={handleQuickIncomeSubmit} className="space-y-3.5 text-xs">
+            <div className="space-y-3.5 text-xs">
               <div>
                 <label className="font-bold text-slate-700 block mb-1">Sumber Pemasukan:</label>
                 <input
@@ -1644,13 +1651,14 @@ export function App() {
                   Batal
                 </button>
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={handleQuickIncomeSubmit}
                   className="min-h-[44px] flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-xs cursor-pointer"
                 >
                   Simpan Pemasukan
                 </button>
               </div>
-            </form>
+            </div>
           </div>
         </div>
       )}
