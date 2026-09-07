@@ -34,10 +34,16 @@ import {
 
 import { 
   supabase, 
-  fetchUserTransactions, 
-  insertUserTransaction, 
-  deleteUserTransaction, 
   getSupabaseConfig, 
+  isValidUuid, 
+  generateUuid,
+  fetchWalletsFromSupabase,
+  saveAllWalletsToSupabase,
+  fetchIncomesFromSupabase,
+  fetchBudgetsFromSupabase,
+  saveBudgetItemToSupabase,
+  deleteBudgetItemFromSupabase,
+  fetchTransactionsFromSupabase,
   SupabaseTransaction 
 } from './lib/supabase';
 
@@ -73,75 +79,25 @@ import {
 } from 'lucide-react';
 
 export function App() {
-  // --- Persistent States ---
+  // --- Persistent States (User Profile preserves device identity & syncCode) ---
   const [profile, setProfile] = useState<UserProfile>(() => {
     const saved = localStorage.getItem('mp_profile');
     return saved ? JSON.parse(saved) : DEFAULT_PROFILE;
   });
 
-  const [wallets, setWallets] = useState<WalletItem[]>(() => {
-    const saved = localStorage.getItem('mp_wallets');
-    return saved ? JSON.parse(saved) : DEFAULT_WALLETS;
-  });
-
-  const [months, setMonths] = useState<BudgetMonth[]>(() => {
-    const saved = localStorage.getItem('mp_months');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length >= 12) {
-          return parsed;
-        } else if (Array.isArray(parsed) && parsed.length > 0) {
-          const existingIds = new Set(parsed.map((p: any) => p.monthId));
-          const missing = DEFAULT_MONTHS.filter(d => !existingIds.has(d.monthId));
-          return [...parsed, ...missing];
-        }
-      } catch (e) {
-        console.error(e);
-      }
-    }
-    return DEFAULT_MONTHS;
-  });
-
+  // --- Financial States (Single Source of Truth: Supabase Cloud Database) ---
+  const [wallets, setWallets] = useState<WalletItem[]>(DEFAULT_WALLETS);
+  const [months, setMonths] = useState<BudgetMonth[]>(DEFAULT_MONTHS);
   const [activeMonthId, setActiveMonthId] = useState<string>('2026-01');
-
-  const [incomes, setIncomes] = useState<IncomeItem[]>(() => {
-    const saved = localStorage.getItem('mp_incomes');
-    return saved ? JSON.parse(saved) : DEFAULT_INCOMES;
-  });
-
-  const [allocations, setAllocations] = useState<BudgetPlanAllocation[]>(() => {
-    const saved = localStorage.getItem('mp_allocations');
-    return saved ? JSON.parse(saved) : DEFAULT_ALLOCATIONS;
-  });
-
-  const [fixed, setFixed] = useState<FixedExpenseItem[]>(() => {
-    const saved = localStorage.getItem('mp_fixed');
-    return saved ? JSON.parse(saved) : DEFAULT_FIXED;
-  });
-
-  const [variable, setVariable] = useState<VariableExpenseItem[]>(() => {
-    const saved = localStorage.getItem('mp_variable');
-    return saved ? JSON.parse(saved) : DEFAULT_VARIABLE;
-  });
-
-  const [savings, setSavings] = useState<SavingItem[]>(() => {
-    const saved = localStorage.getItem('mp_savings');
-    return saved ? JSON.parse(saved) : DEFAULT_SAVINGS;
-  });
-
-  const [subscriptions, setSubscriptions] = useState<SubscriptionItem[]>(() => {
-    const saved = localStorage.getItem('mp_subscriptions');
-    return saved ? JSON.parse(saved) : DEFAULT_SUBSCRIPTIONS;
-  });
-
-  const [dailyExpenses, setDailyExpenses] = useState<DailyExpenseItem[]>(() => {
-    const saved = localStorage.getItem('mp_daily');
-    return saved ? JSON.parse(saved) : DEFAULT_DAILY_EXPENSES;
-  });
+  const [incomes, setIncomes] = useState<IncomeItem[]>([]);
+  const [allocations, setAllocations] = useState<BudgetPlanAllocation[]>(DEFAULT_ALLOCATIONS);
+  const [fixed, setFixed] = useState<FixedExpenseItem[]>([]);
+  const [variable, setVariable] = useState<VariableExpenseItem[]>([]);
+  const [savings, setSavings] = useState<SavingItem[]>([]);
+  const [subscriptions, setSubscriptions] = useState<SubscriptionItem[]>([]);
+  const [dailyExpenses, setDailyExpenses] = useState<DailyExpenseItem[]>([]);
 
   // --- Supabase Realtime & Data State ---
-  const [supabaseTransactions, setSupabaseTransactions] = useState<SupabaseTransaction[]>([]);
   const [isSupabaseLive, setIsSupabaseLive] = useState<boolean>(false);
   const [isSyncingSupabase, setIsSyncingSupabase] = useState<boolean>(false);
 
@@ -181,102 +137,61 @@ export function App() {
     walletName: ''
   });
 
-  // --- Save to LocalStorage on state changes ---
+  // Hanya simpan profil pengguna / sync_code ke LocalStorage agar login & kode sinkronisasi tidak hilang saat reload
   useEffect(() => {
     localStorage.setItem('mp_profile', JSON.stringify(profile));
   }, [profile]);
 
-  useEffect(() => {
-    localStorage.setItem('mp_wallets', JSON.stringify(wallets));
-  }, [wallets]);
+  // --- 2. AMBIL DATA DARI SUPABASE (READ) DARI 4 TABEL: WALLETS, INCOMES, BUDGETS, TRANSACTIONS ---
+  const loadFinancialData = useCallback(async (syncCode?: string, userId?: string) => {
+    const code = syncCode || profile.syncCode;
+    if (!code && !userId) return;
 
-  useEffect(() => {
-    localStorage.setItem('mp_months', JSON.stringify(months));
-  }, [months]);
-
-  useEffect(() => {
-    localStorage.setItem('mp_incomes', JSON.stringify(incomes));
-  }, [incomes]);
-
-  useEffect(() => {
-    localStorage.setItem('mp_allocations', JSON.stringify(allocations));
-  }, [allocations]);
-
-  useEffect(() => {
-    localStorage.setItem('mp_fixed', JSON.stringify(fixed));
-  }, [fixed]);
-
-  useEffect(() => {
-    localStorage.setItem('mp_variable', JSON.stringify(variable));
-  }, [variable]);
-
-  useEffect(() => {
-    localStorage.setItem('mp_savings', JSON.stringify(savings));
-  }, [savings]);
-
-  useEffect(() => {
-    localStorage.setItem('mp_subscriptions', JSON.stringify(subscriptions));
-  }, [subscriptions]);
-
-  useEffect(() => {
-    localStorage.setItem('mp_daily', JSON.stringify(dailyExpenses));
-  }, [dailyExpenses]);
-
-  // --- 2. AMBIL DATA DARI SUPABASE (READ) & SINKRONISASI KE STATE ---
-  const loadSupabaseData = useCallback(async (userId: string) => {
-    if (!userId) return;
     setIsSyncingSupabase(true);
     try {
-      const data = await fetchUserTransactions(userId);
-      setSupabaseTransactions(data);
-
-      if (data.length > 0) {
-        // Convert Supabase transactions into Incomes and Daily Expenses
-        const supaIncomes: IncomeItem[] = data
-          .filter(t => t.type === 'INCOME')
-          .map(t => ({
-            id: t.id,
-            monthId: activeMonthId,
-            source: t.title,
-            type: 'Utama',
-            amount: Number(t.amount) || 0,
-            date: t.date || new Date().toLocaleDateString('id-ID'),
-            walletName: t.wallet_name || 'Bank BCA'
-          }));
-
-        const supaExpenses: DailyExpenseItem[] = data
-          .filter(t => t.type === 'EXPENSE')
-          .map(t => ({
-            id: t.id,
-            monthId: activeMonthId,
-            date: t.date || new Date().toLocaleDateString('id-ID'),
-            title: t.title,
-            category: t.category || 'Makan & Minum',
-            quantity: 1,
-            unitPrice: Number(t.amount) || 0,
-            totalAmount: Number(t.amount) || 0,
-            notes: t.notes,
-            walletName: t.wallet_name || 'Uang Cash'
-          }));
-
-        // Replace or merge with state
-        if (supaIncomes.length > 0) {
-          setIncomes(supaIncomes);
-        }
-        if (supaExpenses.length > 0) {
-          setDailyExpenses(supaExpenses);
-        }
+      // 1. Ambil data dompet / saldo dari tabel 'wallets'
+      let supaWallets = await fetchWalletsFromSupabase(code, userId);
+      if (supaWallets.length === 0) {
+        // Jika kode sinkronisasi belum memiliki dompet di database, simpan default wallets ke Supabase
+        const initialToSeed = DEFAULT_WALLETS.map(w => ({
+          ...w,
+          id: isValidUuid(w.id) ? w.id : generateUuid()
+        }));
+        await saveAllWalletsToSupabase(initialToSeed, code, userId);
+        supaWallets = initialToSeed;
       }
+      setWallets(supaWallets);
+
+      // 2. Ambil data pemasukan dari tabel 'incomes'
+      const supaIncomes = await fetchIncomesFromSupabase(code, userId);
+      setIncomes(supaIncomes);
+
+      // 3. Ambil data pos anggaran & alokasi dari tabel 'budgets'
+      const supaBudgets = await fetchBudgetsFromSupabase(code, userId);
+      if (supaBudgets.allocations.length > 0) {
+        setAllocations(supaBudgets.allocations);
+      }
+      setFixed(supaBudgets.fixed);
+      setVariable(supaBudgets.variable);
+      setSavings(supaBudgets.savings);
+      setSubscriptions(supaBudgets.subscriptions);
+
+      // 4. Ambil data transaksi/pengeluaran dari tabel 'transactions'
+      const supaTransactions = await fetchTransactionsFromSupabase(code, userId);
+      setDailyExpenses(supaTransactions);
+
+      setIsSupabaseLive(true);
     } catch (err) {
-      console.error('Failed to load Supabase transactions:', err);
+      console.error('Gagal mengambil data keuangan dari Supabase:', err);
     } finally {
       setIsSyncingSupabase(false);
     }
-  }, [activeMonthId]);
+  }, [profile.syncCode]);
 
-  // --- 3. SINKRONISASI REAL-TIME DENGAN SUPABASE CHANNEL ---
+  // --- 3. SINKRONISASI REAL-TIME DENGAN SUPABASE CHANNEL UNTUK 4 TABEL ---
   useEffect(() => {
     const config = getSupabaseConfig();
+    const code = profile.syncCode;
     const userId = profile.supabaseUserId;
 
     // Check existing Supabase auth session
@@ -305,7 +220,6 @@ export function App() {
           name: session.user.user_metadata?.name || prev.name
         }));
       } else if (event === 'SIGNED_OUT') {
-        // Reset Supabase user
         setProfile(prev => ({
           ...prev,
           supabaseUserId: undefined,
@@ -314,33 +228,36 @@ export function App() {
       }
     });
 
-    if (!config.isConfigured || !userId) {
+    if (!config.isConfigured || (!code && !userId)) {
       setIsSupabaseLive(false);
       return () => {
         authListener.subscription.unsubscribe();
       };
     }
 
-    // Initial data fetch
-    loadSupabaseData(userId);
+    // Ambil data pertama kali dari Supabase
+    loadFinancialData(code, userId);
 
-    // Setup real-time channel subscription
+    // Setup real-time channel subscription untuk tabel wallets, incomes, budgets, transactions
+    const cleanCode = (code || 'global').replace(/[^a-zA-Z0-9]/g, '');
     const channel = supabase
-      .channel(`public:transactions:${userId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'transactions',
-          filter: `user_id=eq.${userId}`
-        },
-        (payload) => {
-          console.log('Realtime change from Supabase:', payload);
-          // Automatically re-fetch and recalculate total balance
-          loadSupabaseData(userId);
-        }
-      )
+      .channel(`mp_sync_${cleanCode}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'wallets' }, (payload) => {
+        console.log('Realtime change in wallets:', payload);
+        loadFinancialData(code, userId);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'incomes' }, (payload) => {
+        console.log('Realtime change in incomes:', payload);
+        loadFinancialData(code, userId);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'budgets' }, (payload) => {
+        console.log('Realtime change in budgets:', payload);
+        loadFinancialData(code, userId);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, (payload) => {
+        console.log('Realtime change in transactions:', payload);
+        loadFinancialData(code, userId);
+      })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           setIsSupabaseLive(true);
@@ -353,7 +270,7 @@ export function App() {
       authListener.subscription.unsubscribe();
       supabase.removeChannel(channel);
     };
-  }, [profile.supabaseUserId, loadSupabaseData, profile.isLoggedIn]);
+  }, [profile.syncCode, profile.supabaseUserId, loadFinancialData, profile.isLoggedIn]);
 
   // --- Active Month Object ---
   const activeMonth = useMemo(() => {
@@ -441,71 +358,135 @@ export function App() {
   // --- Current Theme Config ---
   const currentTheme = THEME_PRESETS[profile.themePreset] || THEME_PRESETS.SHARK_BLUE;
 
-  // --- Action Handlers ---
+  // --- Action Handlers: INSERT / UPDATE / DELETE LANGSUNG KE SUPABASE & RE-FETCH ---
   const handleAddDailyExpense = async (newItem: Omit<DailyExpenseItem, 'id'>) => {
+    const newId = generateUuid();
     const expense: DailyExpenseItem = {
       ...newItem,
-      id: 'd_' + Date.now() + Math.random().toString(36).substr(2, 4)
+      id: newId
     };
+    // Optimistic UI update
     setDailyExpenses(prev => [expense, ...prev]);
 
-    // Push to Supabase if connected
-    if (profile.supabaseUserId) {
-      await insertUserTransaction({
-        user_id: profile.supabaseUserId,
+    const code = profile.syncCode;
+    const userId = profile.supabaseUserId;
+
+    // Langsung lakukan supabase.from('transactions').insert()
+    try {
+      await supabase.from('transactions').insert([{
+        id: newId,
+        sync_code: code,
+        user_id: userId && isValidUuid(userId) ? userId : null,
+        month_id: newItem.monthId || activeMonthId,
         title: newItem.title,
-        amount: newItem.totalAmount,
+        amount: Number(newItem.totalAmount) || 0,
         type: 'EXPENSE',
-        category: newItem.category,
-        wallet_name: newItem.walletName,
-        date: newItem.date,
-        notes: newItem.notes
-      });
+        category: newItem.category || 'Jajan',
+        wallet_name: newItem.walletName || 'Uang Cash',
+        quantity: Number(newItem.quantity) || 1,
+        unit_price: Number(newItem.unitPrice) || Number(newItem.totalAmount) || 0,
+        date: newItem.date || new Date().toLocaleDateString('id-ID'),
+        notes: newItem.notes || ''
+      }]);
+    } catch (err) {
+      console.error('Error insert transaction to Supabase:', err);
     }
+
+    // Panggil fungsi fetch ulang dari database agar semua perangkat melihat data terbaru
+    await loadFinancialData(code, userId);
   };
 
   const handleDeleteDailyExpense = async (id: string) => {
     setDailyExpenses(prev => prev.filter(d => d.id !== id));
-    if (profile.supabaseUserId) {
-      await deleteUserTransaction(id, profile.supabaseUserId);
+    const code = profile.syncCode;
+    const userId = profile.supabaseUserId;
+
+    try {
+      await supabase.from('transactions').delete().eq('id', id);
+    } catch (err) {
+      console.error('Error delete transaction from Supabase:', err);
     }
+    await loadFinancialData(code, userId);
   };
 
   const handleAddIncome = async (item: Omit<IncomeItem, 'id' | 'monthId'>) => {
+    const newId = generateUuid();
     const newInc: IncomeItem = {
       ...item,
-      id: 'inc_' + Date.now(),
+      id: newId,
       monthId: activeMonthId
     };
-    setIncomes(prev => [...prev, newInc]);
+    // Optimistic UI update
+    setIncomes(prev => [newInc, ...prev]);
 
-    // Push to Supabase if connected
-    if (profile.supabaseUserId) {
-      await insertUserTransaction({
-        user_id: profile.supabaseUserId,
-        title: item.source,
-        amount: item.amount,
-        type: 'INCOME',
-        category: item.type,
-        wallet_name: item.walletName,
-        date: item.date
-      });
+    const code = profile.syncCode;
+    const userId = profile.supabaseUserId;
+
+    // Langsung lakukan supabase.from('incomes').insert()
+    try {
+      await supabase.from('incomes').insert([{
+        id: newId,
+        sync_code: code,
+        user_id: userId && isValidUuid(userId) ? userId : null,
+        month_id: activeMonthId,
+        source: item.source,
+        type: item.type,
+        amount: Number(item.amount) || 0,
+        date: item.date || new Date().toLocaleDateString('id-ID'),
+        wallet_name: item.walletName || 'Bank BCA'
+      }]);
+    } catch (err) {
+      console.error('Error insert income to Supabase:', err);
     }
+
+    // Panggil fungsi fetch ulang dari database
+    await loadFinancialData(code, userId);
   };
 
-  const handleUpdateIncome = (updated: IncomeItem) => {
+  const handleUpdateIncome = async (updated: IncomeItem) => {
     setIncomes(prev => prev.map(i => i.id === updated.id ? updated : i));
+    const code = profile.syncCode;
+    const userId = profile.supabaseUserId;
+
+    try {
+      await supabase.from('incomes').upsert([{
+        id: isValidUuid(updated.id) ? updated.id : generateUuid(),
+        sync_code: code,
+        user_id: userId && isValidUuid(userId) ? userId : null,
+        month_id: updated.monthId || activeMonthId,
+        source: updated.source,
+        type: updated.type,
+        amount: Number(updated.amount) || 0,
+        date: updated.date,
+        wallet_name: updated.walletName
+      }]);
+    } catch (err) {
+      console.error('Error updating income in Supabase:', err);
+    }
+    await loadFinancialData(code, userId);
   };
 
   const handleDeleteIncome = async (id: string) => {
     setIncomes(prev => prev.filter(i => i.id !== id));
-    if (profile.supabaseUserId) {
-      await deleteUserTransaction(id, profile.supabaseUserId);
+    const code = profile.syncCode;
+    const userId = profile.supabaseUserId;
+
+    try {
+      await supabase.from('incomes').delete().eq('id', id);
+    } catch (err) {
+      console.error('Error delete income from Supabase:', err);
     }
+    await loadFinancialData(code, userId);
   };
 
-  const handleTransferFunds = (sourceWalletId: string, targetWalletId: string, amount: number, _note?: string) => {
-    setWallets(prev => prev.map(w => {
+  const handleUpdateWallets = async (updatedWallets: WalletItem[]) => {
+    setWallets(updatedWallets);
+    await saveAllWalletsToSupabase(updatedWallets, profile.syncCode, profile.supabaseUserId);
+    await loadFinancialData(profile.syncCode, profile.supabaseUserId);
+  };
+
+  const handleTransferFunds = async (sourceWalletId: string, targetWalletId: string, amount: number, _note?: string) => {
+    const updated = wallets.map(w => {
       if (w.id === sourceWalletId) {
         const nextInit = Math.max(0, (Number(w.initialBalance) || 0) - amount);
         return { ...w, initialBalance: nextInit, balance: nextInit };
@@ -515,8 +496,12 @@ export function App() {
         return { ...w, initialBalance: nextInit, balance: nextInit };
       }
       return w;
-    }));
+    });
+    setWallets(updated);
     setIsTransferModalOpen(false);
+
+    await saveAllWalletsToSupabase(updated, profile.syncCode, profile.supabaseUserId);
+    await loadFinancialData(profile.syncCode, profile.supabaseUserId);
   };
 
   const handleAddNewMonth = (monthName: string, year: number, notes?: string) => {
@@ -544,25 +529,65 @@ export function App() {
     setIsAddMonthModalOpen(false);
   };
 
-  const handleAddFixed = (item: Omit<FixedExpenseItem, 'id' | 'monthId'>) => {
-    setFixed(prev => [...prev, { ...item, id: 'fx_' + Date.now(), monthId: activeMonthId }]);
+  const handleAddFixed = async (item: Omit<FixedExpenseItem, 'id' | 'monthId'>) => {
+    const newId = generateUuid();
+    const fixedItem: FixedExpenseItem = { ...item, id: newId, monthId: activeMonthId };
+    setFixed(prev => [...prev, fixedItem]);
+    await saveBudgetItemToSupabase(fixedItem, 'FIXED', profile.syncCode, profile.supabaseUserId);
+    await loadFinancialData(profile.syncCode, profile.supabaseUserId);
   };
-  const handleDeleteFixed = (id: string) => setFixed(prev => prev.filter(f => f.id !== id));
+  const handleDeleteFixed = async (id: string) => {
+    setFixed(prev => prev.filter(f => f.id !== id));
+    await deleteBudgetItemFromSupabase(id, profile.syncCode, profile.supabaseUserId);
+    await loadFinancialData(profile.syncCode, profile.supabaseUserId);
+  };
 
-  const handleAddVariable = (item: Omit<VariableExpenseItem, 'id' | 'monthId'>) => {
-    setVariable(prev => [...prev, { ...item, id: 'var_' + Date.now(), monthId: activeMonthId }]);
+  const handleAddVariable = async (item: Omit<VariableExpenseItem, 'id' | 'monthId'>) => {
+    const newId = generateUuid();
+    const varItem: VariableExpenseItem = { ...item, id: newId, monthId: activeMonthId };
+    setVariable(prev => [...prev, varItem]);
+    await saveBudgetItemToSupabase(varItem, 'VARIABLE', profile.syncCode, profile.supabaseUserId);
+    await loadFinancialData(profile.syncCode, profile.supabaseUserId);
   };
-  const handleDeleteVariable = (id: string) => setVariable(prev => prev.filter(v => v.id !== id));
+  const handleDeleteVariable = async (id: string) => {
+    setVariable(prev => prev.filter(v => v.id !== id));
+    await deleteBudgetItemFromSupabase(id, profile.syncCode, profile.supabaseUserId);
+    await loadFinancialData(profile.syncCode, profile.supabaseUserId);
+  };
 
-  const handleAddSaving = (item: Omit<SavingItem, 'id' | 'monthId'>) => {
-    setSavings(prev => [...prev, { ...item, id: 'sav_' + Date.now(), monthId: activeMonthId }]);
+  const handleAddSaving = async (item: Omit<SavingItem, 'id' | 'monthId'>) => {
+    const newId = generateUuid();
+    const savItem: SavingItem = { ...item, id: newId, monthId: activeMonthId };
+    setSavings(prev => [...prev, savItem]);
+    await saveBudgetItemToSupabase(savItem, 'SAVINGS', profile.syncCode, profile.supabaseUserId);
+    await loadFinancialData(profile.syncCode, profile.supabaseUserId);
   };
-  const handleDeleteSaving = (id: string) => setSavings(prev => prev.filter(s => s.id !== id));
+  const handleDeleteSaving = async (id: string) => {
+    setSavings(prev => prev.filter(s => s.id !== id));
+    await deleteBudgetItemFromSupabase(id, profile.syncCode, profile.supabaseUserId);
+    await loadFinancialData(profile.syncCode, profile.supabaseUserId);
+  };
 
-  const handleAddSub = (item: Omit<SubscriptionItem, 'id' | 'monthId'>) => {
-    setSubscriptions(prev => [...prev, { ...item, id: 'sub_' + Date.now(), monthId: activeMonthId }]);
+  const handleAddSub = async (item: Omit<SubscriptionItem, 'id' | 'monthId'>) => {
+    const newId = generateUuid();
+    const subItem: SubscriptionItem = { ...item, id: newId, monthId: activeMonthId };
+    setSubscriptions(prev => [...prev, subItem]);
+    await saveBudgetItemToSupabase(subItem, 'SUBSCRIPTION', profile.syncCode, profile.supabaseUserId);
+    await loadFinancialData(profile.syncCode, profile.supabaseUserId);
   };
-  const handleDeleteSub = (id: string) => setSubscriptions(prev => prev.filter(s => s.id !== id));
+  const handleDeleteSub = async (id: string) => {
+    setSubscriptions(prev => prev.filter(s => s.id !== id));
+    await deleteBudgetItemFromSupabase(id, profile.syncCode, profile.supabaseUserId);
+    await loadFinancialData(profile.syncCode, profile.supabaseUserId);
+  };
+
+  const handleUpdateAllocations = async (newAllocations: BudgetPlanAllocation[]) => {
+    setAllocations(newAllocations);
+    for (const al of newAllocations) {
+      await saveBudgetItemToSupabase(al, 'ALLOCATION', profile.syncCode, profile.supabaseUserId);
+    }
+    await loadFinancialData(profile.syncCode, profile.supabaseUserId);
+  };
 
   const handleAutoAddFromAssistant = (params: {
     title: string;
@@ -607,18 +632,18 @@ export function App() {
 
   const handleLoginSuccess = (updatedProfile: UserProfile) => {
     setProfile(updatedProfile);
-    if (updatedProfile.supabaseUserId) {
-      loadSupabaseData(updatedProfile.supabaseUserId);
-    }
+    loadFinancialData(updatedProfile.syncCode, updatedProfile.supabaseUserId);
   };
 
   const handleDemoLogin = () => {
-    setProfile({
+    const updated = {
       ...profile,
       isLoggedIn: true,
       name: 'Budi Santoso',
       syncCode: 'CUAN-7701'
-    });
+    };
+    setProfile(updated);
+    loadFinancialData('CUAN-7701');
   };
 
   const handleLogout = async () => {
@@ -636,17 +661,83 @@ export function App() {
     setIsSettingsModalOpen(false);
   };
 
-  const handleImportFullData = (payload: any) => {
+  const handleImportFullData = async (payload: any) => {
+    const targetCode = payload.profile?.syncCode || profile.syncCode;
+    const targetUserId = profile.supabaseUserId;
+
     if (payload.profile) setProfile({ ...payload.profile, isLoggedIn: true });
-    if (payload.wallets) setWallets(payload.wallets);
+    if (payload.wallets) {
+      setWallets(payload.wallets);
+      await saveAllWalletsToSupabase(payload.wallets, targetCode, targetUserId);
+    }
     if (payload.months) setMonths(payload.months);
-    if (payload.incomes) setIncomes(payload.incomes);
-    if (payload.allocations) setAllocations(payload.allocations);
-    if (payload.fixed) setFixed(payload.fixed);
-    if (payload.variable) setVariable(payload.variable);
-    if (payload.savings) setSavings(payload.savings);
-    if (payload.subscriptions) setSubscriptions(payload.subscriptions);
-    if (payload.dailyExpenses) setDailyExpenses(payload.dailyExpenses);
+    if (payload.incomes) {
+      setIncomes(payload.incomes);
+      for (const inc of payload.incomes) {
+        await supabase.from('incomes').insert([{
+          id: isValidUuid(inc.id) ? inc.id : generateUuid(),
+          sync_code: targetCode,
+          user_id: targetUserId && isValidUuid(targetUserId) ? targetUserId : null,
+          month_id: inc.monthId || activeMonthId,
+          source: inc.source,
+          type: inc.type,
+          amount: Number(inc.amount) || 0,
+          date: inc.date,
+          wallet_name: inc.walletName
+        }]);
+      }
+    }
+    if (payload.allocations) {
+      setAllocations(payload.allocations);
+      for (const al of payload.allocations) {
+        await saveBudgetItemToSupabase(al, 'ALLOCATION', targetCode, targetUserId);
+      }
+    }
+    if (payload.fixed) {
+      setFixed(payload.fixed);
+      for (const f of payload.fixed) {
+        await saveBudgetItemToSupabase(f, 'FIXED', targetCode, targetUserId);
+      }
+    }
+    if (payload.variable) {
+      setVariable(payload.variable);
+      for (const v of payload.variable) {
+        await saveBudgetItemToSupabase(v, 'VARIABLE', targetCode, targetUserId);
+      }
+    }
+    if (payload.savings) {
+      setSavings(payload.savings);
+      for (const s of payload.savings) {
+        await saveBudgetItemToSupabase(s, 'SAVINGS', targetCode, targetUserId);
+      }
+    }
+    if (payload.subscriptions) {
+      setSubscriptions(payload.subscriptions);
+      for (const sub of payload.subscriptions) {
+        await saveBudgetItemToSupabase(sub, 'SUBSCRIPTION', targetCode, targetUserId);
+      }
+    }
+    if (payload.dailyExpenses) {
+      setDailyExpenses(payload.dailyExpenses);
+      for (const d of payload.dailyExpenses) {
+        await supabase.from('transactions').insert([{
+          id: isValidUuid(d.id) ? d.id : generateUuid(),
+          sync_code: targetCode,
+          user_id: targetUserId && isValidUuid(targetUserId) ? targetUserId : null,
+          month_id: d.monthId || activeMonthId,
+          title: d.title,
+          amount: Number(d.totalAmount) || 0,
+          type: 'EXPENSE',
+          category: d.category,
+          wallet_name: d.walletName,
+          quantity: Number(d.quantity) || 1,
+          unit_price: Number(d.unitPrice) || Number(d.totalAmount) || 0,
+          date: d.date,
+          notes: d.notes || ''
+        }]);
+      }
+    }
+    await loadFinancialData(targetCode, targetUserId);
     setIsSyncModalOpen(false);
   };
 
@@ -937,7 +1028,7 @@ export function App() {
               id="mobile-btn-sync"
               type="button"
               onClick={() => {
-                if (profile.supabaseUserId) loadSupabaseData(profile.supabaseUserId);
+                loadFinancialData(profile.syncCode, profile.supabaseUserId);
                 setIsSyncModalOpen(true);
               }}
               className="min-w-[40px] min-h-[40px] flex items-center justify-center p-1.5 rounded-xl border border-slate-200 bg-white text-sky-600 shadow-2xs transition active:scale-95"
@@ -981,18 +1072,16 @@ export function App() {
           </div>
 
           <div className="flex items-center gap-3">
-            {profile.supabaseUserId && (
-              <button
-                type="button"
-                onClick={() => loadSupabaseData(profile.supabaseUserId!)}
-                disabled={isSyncingSupabase}
-                className="text-xs font-semibold text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition cursor-pointer"
-                title="Sinkronkan ulang data Supabase"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isSyncingSupabase ? 'animate-spin' : ''}`} />
-                <span>{isSyncingSupabase ? 'Menyinkronkan...' : 'Sync Supabase'}</span>
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => loadFinancialData(profile.syncCode, profile.supabaseUserId)}
+              disabled={isSyncingSupabase}
+              className="text-xs font-semibold text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition cursor-pointer"
+              title="Sinkronkan ulang data Supabase"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncingSupabase ? 'animate-spin' : ''}`} />
+              <span>{isSyncingSupabase ? 'Menyinkronkan...' : 'Sync Supabase'}</span>
+            </button>
 
             <div className="text-xs font-semibold text-slate-600 flex items-center gap-1.5 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200">
               <Calendar className="w-3.5 h-3.5 text-slate-500" />
@@ -1157,7 +1246,7 @@ export function App() {
                 wallets={wallets}
                 computedWallets={computedWallets}
                 theme={currentTheme}
-                onUpdateWallets={setWallets}
+                onUpdateWallets={handleUpdateWallets}
                 onOpenTransferModal={() => setIsTransferModalOpen(true)}
               />
 
@@ -1195,7 +1284,7 @@ export function App() {
               onAddIncome={handleAddIncome}
               onUpdateIncome={handleUpdateIncome}
               onDeleteIncome={handleDeleteIncome}
-              onUpdateAllocations={setAllocations}
+              onUpdateAllocations={handleUpdateAllocations}
             />
           )}
 
@@ -1497,7 +1586,10 @@ export function App() {
         dailyExpenses={dailyExpenses}
         allocations={allocations}
         theme={currentTheme}
-        onUpdateSyncCode={newCode => setProfile({ ...profile, syncCode: newCode })}
+        onUpdateSyncCode={(newCode) => {
+          setProfile(prev => ({ ...prev, syncCode: newCode }));
+          loadFinancialData(newCode, profile.supabaseUserId);
+        }}
         onImportFullData={handleImportFullData}
       />
 
