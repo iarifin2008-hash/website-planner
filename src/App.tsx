@@ -370,9 +370,9 @@ export function App() {
   const currentTheme = THEME_PRESETS[profile.themePreset] || THEME_PRESETS.SHARK_BLUE;
 
   // --- Action Handlers: INSERT / UPDATE / DELETE LANGSUNG KE SUPABASE & OPTIMISTIC UPDATE ---
-  const handleAddDailyExpense = async (newItem: Omit<DailyExpenseItem, 'id'>, e?: React.SyntheticEvent | React.FormEvent) => {
-    if (e && typeof e.preventDefault === 'function') {
-      e.preventDefault();
+  const handleAddDailyExpense = async (newItem: Omit<DailyExpenseItem, 'id'>, e: any = { preventDefault: () => {} }) => {
+    e.preventDefault();
+    if (e.stopPropagation) {
       e.stopPropagation();
     }
     const newId = generateUuid();
@@ -426,9 +426,9 @@ export function App() {
     loadFinancialData(code, userId).catch(console.error);
   };
 
-  const handleAddIncome = async (item: Omit<IncomeItem, 'id' | 'monthId'>, e?: React.SyntheticEvent | React.FormEvent) => {
-    if (e && typeof e.preventDefault === 'function') {
-      e.preventDefault();
+  const handleAddIncome = async (item: Omit<IncomeItem, 'id' | 'monthId'>, e: any = { preventDefault: () => {} }) => {
+    e.preventDefault();
+    if (e.stopPropagation) {
       e.stopPropagation();
     }
     const newId = generateUuid();
