@@ -21,7 +21,7 @@ interface DailyExpensesSectionProps {
   wallets: WalletItem[];
   currentMonthId: string;
   theme: any;
-  onAddExpense: (expense: Omit<DailyExpenseItem, 'id'>) => void;
+  onAddExpense: (expense: Omit<DailyExpenseItem, 'id'>, e?: React.SyntheticEvent | React.FormEvent) => void;
   onDeleteExpense: (id: string) => void;
 }
 
@@ -51,6 +51,7 @@ export const DailyExpensesSection: React.FC<DailyExpensesSectionProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     if (!title.trim() || !unitPrice || Number(unitPrice) <= 0) return;
 
     const total = (Number(quantity) || 1) * Number(unitPrice);
@@ -64,7 +65,7 @@ export const DailyExpensesSection: React.FC<DailyExpensesSectionProps> = ({
       totalAmount: total,
       notes: notes.trim(),
       walletName: walletName || wallets[0]?.name || 'Uang Cash'
-    });
+    }, e);
 
     // Reset form
     setTitle('');

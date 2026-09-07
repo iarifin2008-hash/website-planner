@@ -32,17 +32,14 @@ export const DEFAULT_MONTHS: BudgetMonth[] = [
 ];
 
 export const DEFAULT_WALLETS: WalletItem[] = [
-  { id: 'w1', name: 'Saldo Rekening BCA', type: 'BANK', initialBalance: 6000000, balance: 4575000, colorHex: '#6599B8', iconName: 'bank', isDefault: true },
-  { id: 'w2', name: 'Saldo DANA', type: 'E_WALLET', initialBalance: 1200000, balance: 545000, colorHex: '#118EEA', iconName: 'dana' },
-  { id: 'w3', name: 'Uang Cash', type: 'CASH', initialBalance: 600000, balance: 398000, colorHex: '#74C69D', iconName: 'cash' },
-  { id: 'w4', name: 'GoPay', type: 'E_WALLET', initialBalance: 500000, balance: 245000, colorHex: '#00AED6', iconName: 'wallet' },
-  { id: 'w5', name: 'ShopeePay', type: 'E_WALLET', initialBalance: 300000, balance: 300000, colorHex: '#EE4D2D', iconName: 'card' }
+  { id: 'w1', name: 'Saldo Rekening BCA', type: 'BANK', initialBalance: 0, balance: 0, colorHex: '#6599B8', iconName: 'bank', isDefault: true },
+  { id: 'w2', name: 'Saldo DANA', type: 'E_WALLET', initialBalance: 0, balance: 0, colorHex: '#118EEA', iconName: 'dana' },
+  { id: 'w3', name: 'Uang Cash', type: 'CASH', initialBalance: 0, balance: 0, colorHex: '#74C69D', iconName: 'cash' },
+  { id: 'w4', name: 'GoPay', type: 'E_WALLET', initialBalance: 0, balance: 0, colorHex: '#00AED6', iconName: 'wallet' },
+  { id: 'w5', name: 'ShopeePay', type: 'E_WALLET', initialBalance: 0, balance: 0, colorHex: '#EE4D2D', iconName: 'card' }
 ];
 
-export const DEFAULT_INCOMES: IncomeItem[] = [
-  { id: 'inc1', monthId: '2026-01', source: 'Gaji Pokok Kantor', type: 'Utama', amount: 6000000, date: '25/01/2026', walletName: 'Saldo Rekening BCA' },
-  { id: 'inc2', monthId: '2026-01', source: 'Project Freelance Web', type: 'Sampingan', amount: 1000000, date: '15/01/2026', walletName: 'Saldo DANA' }
-];
+export const DEFAULT_INCOMES: IncomeItem[] = [];
 
 export const DEFAULT_ALLOCATIONS: BudgetPlanAllocation[] = [
   { id: 'al1', monthId: '2026-01', categoryKey: 'FIXED', title: 'Kebutuhan Pokok (Fixed Cost)', targetPercent: 50, colorHex: '#6599B8' },
@@ -51,34 +48,15 @@ export const DEFAULT_ALLOCATIONS: BudgetPlanAllocation[] = [
   { id: 'al4', monthId: '2026-01', categoryKey: 'SUBSCRIPTION', title: 'Langganan & Cicilan', targetPercent: 5, colorHex: '#A594F9' }
 ];
 
-export const DEFAULT_FIXED: FixedExpenseItem[] = [
-  { id: 'fx1', monthId: '2026-01', title: 'Sewa Kos Bulanan', priority: 'High', plannedAmount: 1800000, actualAmount: 1800000, date: '01/01/2026', walletName: 'Saldo Rekening BCA' },
-  { id: 'fx2', monthId: '2026-01', title: 'Listrik & Token', priority: 'High', plannedAmount: 250000, actualAmount: 250000, date: '03/01/2026', walletName: 'Saldo DANA' },
-  { id: 'fx3', monthId: '2026-01', title: 'Wifi Indihome', priority: 'Medium', plannedAmount: 350000, actualAmount: 350000, date: '05/01/2026', walletName: 'Saldo Rekening BCA' }
-];
+export const DEFAULT_FIXED: FixedExpenseItem[] = [];
 
-export const DEFAULT_VARIABLE: VariableExpenseItem[] = [
-  { id: 'vr1', monthId: '2026-01', title: 'Uang Makan Mingguan', priority: 'High', plannedAmount: 1000000, actualAmount: 650000, date: '10/01/2026', walletName: 'Saldo DANA' },
-  { id: 'vr2', monthId: '2026-01', title: 'Bensin & Transport', priority: 'Medium', plannedAmount: 300000, actualAmount: 220000, date: '12/01/2026', walletName: 'GoPay' },
-  { id: 'vr3', monthId: '2026-01', title: 'Laundry & Kebutuhan Rumah', priority: 'Low', plannedAmount: 200000, actualAmount: 130000, date: '14/01/2026', walletName: 'Uang Cash' }
-];
+export const DEFAULT_VARIABLE: VariableExpenseItem[] = [];
 
-export const DEFAULT_SAVINGS: SavingItem[] = [
-  { id: 'sv1', monthId: '2026-01', title: 'Dana Darurat (Emergency Fund)', priority: 'High', plannedAmount: 800000, actualAmount: 800000, targetTotal: 10000000, date: '02/01/2026', walletName: 'Saldo Rekening BCA' },
-  { id: 'sv2', monthId: '2026-01', title: 'Investasi Saham & Reksadana (Bibit)', priority: 'Medium', plannedAmount: 600000, actualAmount: 600000, targetTotal: 5000000, date: '05/01/2026', walletName: 'Saldo Rekening BCA' }
-];
+export const DEFAULT_SAVINGS: SavingItem[] = [];
 
-export const DEFAULT_SUBSCRIPTIONS: SubscriptionItem[] = [
-  { id: 'sb1', monthId: '2026-01', title: 'Spotify Premium Family', priority: 'Low', plannedAmount: 55000, actualAmount: 55000, date: '01/01/2026', walletName: 'Saldo DANA' },
-  { id: 'sb2', monthId: '2026-01', title: 'Canva Pro & AI Tool', priority: 'Low', plannedAmount: 120000, actualAmount: 120000, date: '08/01/2026', walletName: 'Saldo Rekening BCA' }
-];
+export const DEFAULT_SUBSCRIPTIONS: SubscriptionItem[] = [];
 
-export const DEFAULT_DAILY_EXPENSES: DailyExpenseItem[] = [
-  { id: 'dl1', monthId: '2026-01', date: '28/01/2026', title: 'Kopi Kenangan Mantan', category: 'Jajan', quantity: 1, unitPrice: 24000, totalAmount: 24000, notes: 'Gula aren less sugar', walletName: 'Uang Cash' },
-  { id: 'dl2', monthId: '2026-01', date: '29/01/2026', title: 'Nasi Padang Rendang', category: 'Makan', quantity: 1, unitPrice: 28000, totalAmount: 28000, notes: 'Makan siang kantor', walletName: 'Uang Cash' },
-  { id: 'dl3', monthId: '2026-01', date: '29/01/2026', title: 'Isi Bensin Pertamax', category: 'Transport', quantity: 1, unitPrice: 35000, totalAmount: 35000, notes: 'Motor beat', walletName: 'GoPay' },
-  { id: 'dl4', monthId: '2026-01', date: '30/01/2026', title: 'Dimsum Mentai Mozzarella', category: 'Jajan', quantity: 2, unitPrice: 20000, totalAmount: 40000, notes: 'Jajan malam', walletName: 'Saldo DANA' }
-];
+export const DEFAULT_DAILY_EXPENSES: DailyExpenseItem[] = [];
 
 export const THEME_PRESETS: Record<string, {
   id: string;

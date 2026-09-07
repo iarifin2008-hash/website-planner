@@ -29,7 +29,7 @@ interface BudgetCalculatorProps {
   results: AllocationCalculationResult[];
   theme: any;
   isIphone?: boolean;
-  onAddIncome: (income: Omit<IncomeItem, 'id'>) => void;
+  onAddIncome: (income: Omit<IncomeItem, 'id'>, e?: React.SyntheticEvent | React.FormEvent) => void;
   onUpdateIncome?: (income: IncomeItem) => void;
   onDeleteIncome: (id: string) => void;
   onUpdateAllocations: (allocations: BudgetPlanAllocation[]) => void;
@@ -83,6 +83,7 @@ export const BudgetCalculator: React.FC<BudgetCalculatorProps> = ({
 
   const handleIncomeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     if (!source.trim() || !amount || Number(amount) <= 0) return;
 
     if (editingIncome && onUpdateIncome) {
@@ -102,7 +103,7 @@ export const BudgetCalculator: React.FC<BudgetCalculatorProps> = ({
         amount: Number(amount),
         date: new Date().toLocaleDateString('id-ID'),
         walletName: walletName || wallets[0]?.name || 'Saldo Rekening BCA'
-      });
+      }, e);
       setIsAddingIncome(false);
     }
 
