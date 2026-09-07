@@ -381,13 +381,10 @@ export function App() {
       id: newId
     };
 
-    // 1. Pembaruan State Lokal Seketika (Optimistic Update) agar saldo langsung terpotong di layar tanpa reload
-    setDailyExpenses(prev => [expense, ...prev]);
-
     const code = profile.syncCode;
     const userId = profile.supabaseUserId;
 
-    // 2. Insert langsung ke tabel transactions di Supabase
+    // 1. Jalankan fungsi await supabase.from('transactions').insert([...]) untuk mengirim data ke Supabase
     try {
       await supabase.from('transactions').insert([{
         id: newId,
@@ -407,6 +404,9 @@ export function App() {
     } catch (err) {
       console.error('Error insert transaction to Supabase:', err);
     }
+
+    // 2. Setelah data berhasil masuk ke database, perbarui state saldo di layar secara langsung (state update) tanpa me-refresh browser
+    setDailyExpenses(prev => [expense, ...prev]);
 
     // 3. Panggil fungsi fetch ulang di background agar perangkat lain (HP, tablet, laptop) tersinkronisasi
     loadFinancialData(code, userId).catch(console.error);
@@ -438,13 +438,10 @@ export function App() {
       monthId: activeMonthId
     };
 
-    // 1. Pembaruan State Lokal Seketika (Optimistic Update) agar saldo langsung bertambah di layar tanpa reload
-    setIncomes(prev => [newInc, ...prev]);
-
     const code = profile.syncCode;
     const userId = profile.supabaseUserId;
 
-    // 2. Insert langsung ke tabel incomes di Supabase
+    // 1. Insert langsung ke tabel incomes dan transactions di Supabase
     try {
       await supabase.from('incomes').insert([{
         id: newId,
@@ -457,9 +454,28 @@ export function App() {
         date: item.date || new Date().toLocaleDateString('id-ID'),
         wallet_name: item.walletName || 'Saldo Rekening BCA'
       }]);
+
+      await supabase.from('transactions').insert([{
+        id: newId,
+        sync_code: code,
+        user_id: userId && isValidUuid(userId) ? userId : null,
+        month_id: activeMonthId,
+        title: item.source,
+        amount: Number(item.amount) || 0,
+        type: 'INCOME',
+        category: item.type,
+        wallet_name: item.walletName || 'Saldo Rekening BCA',
+        quantity: 1,
+        unit_price: Number(item.amount) || 0,
+        date: item.date || new Date().toLocaleDateString('id-ID'),
+        notes: 'Pemasukan ' + item.type
+      }]);
     } catch (err) {
       console.error('Error insert income to Supabase:', err);
     }
+
+    // 2. Pembaruan State Langsung di layar tanpa reload
+    setIncomes(prev => [newInc, ...prev]);
 
     // 3. Panggil fungsi fetch ulang di background
     loadFinancialData(code, userId).catch(console.error);
@@ -763,47 +779,60 @@ export function App() {
     setIsSyncModalOpen(false);
   };
 
-  // Quick Income Submit Handler
-  const handleQuickIncomeSubmit = (e: React.FormEvent) => {
+  // --- Fungsi handleSubmit / Penanganan Tambah Transaksi di src/App.tsx ---
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    e.stopPropagation();
-    if (!quickIncomeForm.title.trim() || !quickIncomeForm.amount || Number(quickIncomeForm.amount) <= 0) return;
+    if (e.stopPropagation) {
+      e.stopPropagation();
+    }
 
-    handleAddIncome({
-      source: quickIncomeForm.title.trim(),
-      type: quickIncomeForm.category,
-      amount: Number(quickIncomeForm.amount),
-      date: new Date().toLocaleDateString('id-ID'),
-      walletName: quickIncomeForm.sourceWalletName || wallets[0]?.name || 'Saldo Rekening BCA'
-    }, e);
-
-    setQuickIncomeForm({
-      title: '',
-      amount: '',
-      category: 'Utama',
-      sourceWalletName: ''
-    });
-    setIsQuickIncomeModalOpen(false);
-  };
-
-  // Quick Expense Submit Handler
-  const handleQuickExpenseSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
     if (!quickExpenseForm.title.trim() || !quickExpenseForm.amount || Number(quickExpenseForm.amount) <= 0) return;
 
-    handleAddDailyExpense({
+    const newId = generateUuid();
+    const amountNum = Number(quickExpenseForm.amount);
+    const code = profile.syncCode;
+    const userId = profile.supabaseUserId;
+    const chosenWallet = quickExpenseForm.walletName || wallets[0]?.name || 'Uang Cash';
+    const dateFormatted = new Date().toLocaleDateString('id-ID');
+
+    const expenseItem: DailyExpenseItem = {
+      id: newId,
       monthId: activeMonthId,
-      date: new Date().toLocaleDateString('id-ID'),
+      date: dateFormatted,
       title: quickExpenseForm.title.trim(),
       category: quickExpenseForm.category,
       quantity: 1,
-      unitPrice: Number(quickExpenseForm.amount),
-      totalAmount: Number(quickExpenseForm.amount),
+      unitPrice: amountNum,
+      totalAmount: amountNum,
       notes: 'Ditambahkan via tombol cepat',
-      walletName: quickExpenseForm.walletName || wallets[0]?.name || 'Uang Cash'
-    }, e);
+      walletName: chosenWallet
+    };
 
+    // 1. Jalankan fungsi await supabase.from('transactions').insert([...]) untuk mengirim data ke Supabase
+    try {
+      await supabase.from('transactions').insert([{
+        id: newId,
+        sync_code: code,
+        user_id: userId && isValidUuid(userId) ? userId : null,
+        month_id: activeMonthId,
+        title: expenseItem.title,
+        amount: amountNum,
+        type: 'EXPENSE',
+        category: expenseItem.category,
+        wallet_name: chosenWallet,
+        quantity: 1,
+        unit_price: amountNum,
+        date: dateFormatted,
+        notes: expenseItem.notes
+      }]);
+    } catch (err) {
+      console.error('Error insert transaction to Supabase:', err);
+    }
+
+    // 2. Setelah data berhasil masuk ke database, perbarui state saldo di layar secara langsung (state update) tanpa me-refresh browser
+    setDailyExpenses(prev => [expenseItem, ...prev]);
+
+    // Reset form & tutup modal
     setQuickExpenseForm({
       title: '',
       amount: '',
@@ -811,6 +840,85 @@ export function App() {
       walletName: ''
     });
     setIsQuickExpenseModalOpen(false);
+
+    // Sync background ke Supabase
+    loadFinancialData(code, userId).catch(console.error);
+  };
+
+  const handleQuickExpenseSubmit = handleSubmit;
+
+  // Quick Income Submit Handler (+ Pemasukan)
+  const handleQuickIncomeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (e.stopPropagation) {
+      e.stopPropagation();
+    }
+
+    if (!quickIncomeForm.title.trim() || !quickIncomeForm.amount || Number(quickIncomeForm.amount) <= 0) return;
+
+    const newId = generateUuid();
+    const amountNum = Number(quickIncomeForm.amount);
+    const code = profile.syncCode;
+    const userId = profile.supabaseUserId;
+    const chosenWallet = quickIncomeForm.sourceWalletName || wallets[0]?.name || 'Saldo Rekening BCA';
+    const dateFormatted = new Date().toLocaleDateString('id-ID');
+
+    const newIncome: IncomeItem = {
+      id: newId,
+      monthId: activeMonthId,
+      source: quickIncomeForm.title.trim(),
+      type: quickIncomeForm.category,
+      amount: amountNum,
+      date: dateFormatted,
+      walletName: chosenWallet
+    };
+
+    // 1. Jalankan insert ke Supabase (tabel incomes & transactions)
+    try {
+      await supabase.from('incomes').insert([{
+        id: newId,
+        sync_code: code,
+        user_id: userId && isValidUuid(userId) ? userId : null,
+        month_id: activeMonthId,
+        source: newIncome.source,
+        type: newIncome.type,
+        amount: amountNum,
+        date: dateFormatted,
+        wallet_name: chosenWallet
+      }]);
+
+      await supabase.from('transactions').insert([{
+        id: newId,
+        sync_code: code,
+        user_id: userId && isValidUuid(userId) ? userId : null,
+        month_id: activeMonthId,
+        title: newIncome.source,
+        amount: amountNum,
+        type: 'INCOME',
+        category: newIncome.type,
+        wallet_name: chosenWallet,
+        quantity: 1,
+        unit_price: amountNum,
+        date: dateFormatted,
+        notes: 'Pemasukan ' + newIncome.type
+      }]);
+    } catch (err) {
+      console.error('Error insert income to Supabase:', err);
+    }
+
+    // 2. Perbarui state secara langsung (state update) tanpa me-refresh browser
+    setIncomes(prev => [newIncome, ...prev]);
+
+    // Reset form & tutup modal
+    setQuickIncomeForm({
+      title: '',
+      amount: '',
+      category: 'Utama',
+      sourceWalletName: ''
+    });
+    setIsQuickIncomeModalOpen(false);
+
+    loadFinancialData(code, userId).catch(console.error);
   };
 
   // If user is not logged in, render the clean pastel AuthGate
@@ -1520,7 +1628,7 @@ export function App() {
               </button>
             </div>
 
-            <form onSubmit={handleQuickExpenseSubmit} className="space-y-3.5 text-xs">
+            <form onSubmit={handleSubmit} className="space-y-3.5 text-xs">
               <div>
                 <label className="font-bold text-slate-700 block mb-1">Nama Item Belanja / Jajan:</label>
                 <input
