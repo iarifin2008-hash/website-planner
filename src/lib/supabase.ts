@@ -127,20 +127,31 @@ export async function verifyEmailOtp(email: string, token: string) {
   return { ...result, isSimulated: false };
 }
 
+// Helper to resolve effective user ID from arguments or Supabase Auth session
+export async function resolveEffectiveUserId(param1?: string, param2?: string): Promise<string | null> {
+  if (param2 && isValidUuid(param2)) return param2;
+  if (param1 && isValidUuid(param1)) return param1;
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user?.id && isValidUuid(session.user.id)) return session.user.id;
+  } catch (e) {}
+  return null;
+}
+
 // ==============================================================================
 // 3. TABEL: WALLETS (DOMPET & SALDO)
 // ==============================================================================
-export async function fetchWalletsFromSupabase(syncCode: string, userId?: string): Promise<WalletItem[]> {
+export async function fetchWalletsFromSupabase(param1?: string, param2?: string): Promise<WalletItem[]> {
   const currentConfig = getSupabaseConfig();
-  if (!currentConfig.isConfigured || (!syncCode && !userId)) {
+  if (!currentConfig.isConfigured) {
     return [];
   }
 
+  const userId = await resolveEffectiveUserId(param1, param2);
+
   try {
     let query = supabase.from('wallets').select('*');
-    if (syncCode) {
-      query = query.eq('sync_code', syncCode);
-    } else if (userId && isValidUuid(userId)) {
+    if (userId) {
       query = query.eq('user_id', userId);
     }
 
@@ -154,8 +165,8 @@ export async function fetchWalletsFromSupabase(syncCode: string, userId?: string
       id: String(row.id),
       name: row.name || 'Dompet',
       type: row.type || 'BANK',
-      initialBalance: Number(row.initial_balance ?? row.initialBalance ?? row.balance ?? 0),
-      balance: Number(row.balance ?? row.initial_balance ?? 0),
+      initialBalance: Number(row.initial_balance ?? row.initialBalance ?? row.current_balance ?? row.balance ?? 0),
+      balance: Number(row.current_balance ?? row.balance ?? row.initial_balance ?? 0),
       colorHex: row.color_hex ?? row.colorHex ?? '#0284c7',
       iconName: row.icon_name ?? row.iconName ?? 'Landmark',
       isDefault: Boolean(row.is_default ?? row.isDefault)
@@ -166,28 +177,44 @@ export async function fetchWalletsFromSupabase(syncCode: string, userId?: string
   }
 }
 
-export async function saveAllWalletsToSupabase(wallets: WalletItem[], syncCode: string, userId?: string): Promise<boolean> {
+export async function saveAllWalletsToSupabase(wallets: WalletItem[], param1?: string, param2?: string): Promise<boolean> {
   const currentConfig = getSupabaseConfig();
-  if (!currentConfig.isConfigured || !syncCode) {
+  if (!currentConfig.isConfigured) {
     return false;
   }
 
-  try {
-    const payload = wallets.map(w => ({
-      id: isValidUuid(w.id) ? w.id : generateUuid(),
-      sync_code: syncCode,
-      user_id: userId && isValidUuid(userId) ? userId : null,
-      name: w.name,
-      type: w.type,
-      initial_balance: Number(w.initialBalance) || 0,
-      balance: Number(w.balance) || 0,
-      color_hex: w.colorHex,
-      icon_name: w.iconName,
-      is_default: Boolean(w.isDefault),
-      updated_at: new Date().toISOString()
-    }));
+  const userId = await resolveEffectiveUserId(param1, param2);
 
-    const { error } = await supabase.from('wallets').upsert(payload);
+  try {
+    const buildPayload = (balanceCol: 'current_balance' | 'balance') => wallets.map(w => {
+      const row: any = {
+        id: isValidUuid(w.id) ? w.id : generateUuid(),
+        user_id: userId || null,
+        name: w.name,
+        type: w.type,
+        updated_at: new Date().toISOString()
+      };
+      if (balanceCol === 'current_balance') {
+        row.current_balance = Number(w.balance) || 0;
+      } else {
+        row.balance = Number(w.balance) || 0;
+      }
+      if (w.initialBalance !== undefined) row.initial_balance = Number(w.initialBalance) || 0;
+      if (w.colorHex) row.color_hex = w.colorHex;
+      if (w.iconName) row.icon_name = w.iconName;
+      if (w.isDefault !== undefined) row.is_default = Boolean(w.isDefault);
+      return row;
+    });
+
+    // Coba simpan dengan kolom current_balance (sesuai schema database)
+    let { error } = await supabase.from('wallets').upsert(buildPayload('current_balance'));
+    
+    // Jika kolom current_balance tidak ada di tabel, coba fallback ke 'balance'
+    if (error && (error.message.includes('current_balance') || error.code === 'PGRST204' || error.message.includes('column'))) {
+      const retryResult = await supabase.from('wallets').upsert(buildPayload('balance'));
+      error = retryResult.error;
+    }
+
     if (error) {
       console.warn('Supabase save wallets error:', error.message);
       return false;
@@ -202,17 +229,17 @@ export async function saveAllWalletsToSupabase(wallets: WalletItem[], syncCode: 
 // ==============================================================================
 // 4. TABEL: INCOMES (PEMASUKAN)
 // ==============================================================================
-export async function fetchIncomesFromSupabase(syncCode: string, userId?: string, monthId?: string): Promise<IncomeItem[]> {
+export async function fetchIncomesFromSupabase(param1?: string, param2?: string, monthId?: string): Promise<IncomeItem[]> {
   const currentConfig = getSupabaseConfig();
-  if (!currentConfig.isConfigured || (!syncCode && !userId)) {
+  if (!currentConfig.isConfigured) {
     return [];
   }
 
+  const userId = await resolveEffectiveUserId(param1, param2);
+
   try {
     let query = supabase.from('incomes').select('*');
-    if (syncCode) {
-      query = query.eq('sync_code', syncCode);
-    } else if (userId && isValidUuid(userId)) {
+    if (userId) {
       query = query.eq('user_id', userId);
     }
 
@@ -243,20 +270,21 @@ export async function fetchIncomesFromSupabase(syncCode: string, userId?: string
 
 export async function insertIncomeToSupabase(
   income: Omit<IncomeItem, 'id'> & { id?: string },
-  syncCode: string,
-  userId?: string
+  param1?: string,
+  param2?: string
 ): Promise<IncomeItem | null> {
   const currentConfig = getSupabaseConfig();
-  if (!currentConfig.isConfigured || !syncCode) {
+  if (!currentConfig.isConfigured) {
     return null;
   }
+
+  const userId = await resolveEffectiveUserId(param1, param2);
 
   try {
     const validId = isValidUuid(income.id) ? income.id : generateUuid();
     const payload = {
       id: validId,
-      sync_code: syncCode,
-      user_id: userId && isValidUuid(userId) ? userId : null,
+      user_id: userId || null,
       month_id: income.monthId || '2026-01',
       source: income.source,
       type: income.type,
@@ -286,15 +314,14 @@ export async function insertIncomeToSupabase(
   }
 }
 
-export async function deleteIncomeFromSupabase(id: string, syncCode: string, userId?: string): Promise<boolean> {
+export async function deleteIncomeFromSupabase(id: string, param1?: string, param2?: string): Promise<boolean> {
   const currentConfig = getSupabaseConfig();
   if (!currentConfig.isConfigured) return false;
 
   try {
     let query = supabase.from('incomes').delete().eq('id', id);
-    if (syncCode) {
-      query = query.eq('sync_code', syncCode);
-    } else if (userId && isValidUuid(userId)) {
+    const userId = await resolveEffectiveUserId(param1, param2);
+    if (userId) {
       query = query.eq('user_id', userId);
     }
 
@@ -313,17 +340,17 @@ export async function deleteIncomeFromSupabase(id: string, syncCode: string, use
 // ==============================================================================
 // 5. TABEL: TRANSACTIONS (PENGELUARAN / JAJAN HARIAN)
 // ==============================================================================
-export async function fetchTransactionsFromSupabase(syncCode: string, userId?: string, monthId?: string): Promise<DailyExpenseItem[]> {
+export async function fetchTransactionsFromSupabase(param1?: string, param2?: string, monthId?: string): Promise<DailyExpenseItem[]> {
   const currentConfig = getSupabaseConfig();
-  if (!currentConfig.isConfigured || (!syncCode && !userId)) {
+  if (!currentConfig.isConfigured) {
     return [];
   }
 
+  const userId = await resolveEffectiveUserId(param1, param2);
+
   try {
     let query = supabase.from('transactions').select('*');
-    if (syncCode) {
-      query = query.eq('sync_code', syncCode);
-    } else if (userId && isValidUuid(userId)) {
+    if (userId) {
       query = query.eq('user_id', userId);
     }
 
@@ -359,20 +386,21 @@ export async function fetchTransactionsFromSupabase(syncCode: string, userId?: s
 
 export async function insertTransactionToSupabase(
   tx: Omit<DailyExpenseItem, 'id'> & { id?: string },
-  syncCode: string,
-  userId?: string
+  param1?: string,
+  param2?: string
 ): Promise<DailyExpenseItem | null> {
   const currentConfig = getSupabaseConfig();
-  if (!currentConfig.isConfigured || !syncCode) {
+  if (!currentConfig.isConfigured) {
     return null;
   }
+
+  const userId = await resolveEffectiveUserId(param1, param2);
 
   try {
     const validId = isValidUuid(tx.id) ? tx.id : generateUuid();
     const payload = {
       id: validId,
-      sync_code: syncCode,
-      user_id: userId && isValidUuid(userId) ? userId : null,
+      user_id: userId || null,
       month_id: tx.monthId || '2026-01',
       title: tx.title,
       amount: Number(tx.totalAmount) || 0,
@@ -409,15 +437,14 @@ export async function insertTransactionToSupabase(
   }
 }
 
-export async function deleteTransactionFromSupabase(id: string, syncCode: string, userId?: string): Promise<boolean> {
+export async function deleteTransactionFromSupabase(id: string, param1?: string, param2?: string): Promise<boolean> {
   const currentConfig = getSupabaseConfig();
   if (!currentConfig.isConfigured) return false;
 
   try {
     let query = supabase.from('transactions').delete().eq('id', id);
-    if (syncCode) {
-      query = query.eq('sync_code', syncCode);
-    } else if (userId && isValidUuid(userId)) {
+    const userId = await resolveEffectiveUserId(param1, param2);
+    if (userId) {
       query = query.eq('user_id', userId);
     }
 
@@ -444,7 +471,7 @@ export interface BudgetsFetchResult {
   subscriptions: SubscriptionItem[];
 }
 
-export async function fetchBudgetsFromSupabase(syncCode: string, userId?: string, monthId?: string): Promise<BudgetsFetchResult> {
+export async function fetchBudgetsFromSupabase(param1?: string, param2?: string, monthId?: string): Promise<BudgetsFetchResult> {
   const currentConfig = getSupabaseConfig();
   const emptyResult: BudgetsFetchResult = {
     allocations: [],
@@ -454,15 +481,15 @@ export async function fetchBudgetsFromSupabase(syncCode: string, userId?: string
     subscriptions: []
   };
 
-  if (!currentConfig.isConfigured || (!syncCode && !userId)) {
+  if (!currentConfig.isConfigured) {
     return emptyResult;
   }
 
+  const userId = await resolveEffectiveUserId(param1, param2);
+
   try {
     let query = supabase.from('budgets').select('*');
-    if (syncCode) {
-      query = query.eq('sync_code', syncCode);
-    } else if (userId && isValidUuid(userId)) {
+    if (userId) {
       query = query.eq('user_id', userId);
     }
 
@@ -553,18 +580,19 @@ export async function fetchBudgetsFromSupabase(syncCode: string, userId?: string
 export async function saveBudgetItemToSupabase(
   item: any,
   categoryKey: 'ALLOCATION' | 'FIXED' | 'VARIABLE' | 'SAVINGS' | 'SUBSCRIPTION',
-  syncCode: string,
-  userId?: string
+  param1?: string,
+  param2?: string
 ): Promise<boolean> {
   const currentConfig = getSupabaseConfig();
-  if (!currentConfig.isConfigured || !syncCode) return false;
+  if (!currentConfig.isConfigured) return false;
+
+  const userId = await resolveEffectiveUserId(param1, param2);
 
   try {
     const validId = isValidUuid(item.id) ? item.id : generateUuid();
     const payload = {
       id: validId,
-      sync_code: syncCode,
-      user_id: userId && isValidUuid(userId) ? userId : null,
+      user_id: userId || null,
       month_id: item.monthId || '2026-01',
       category_key: categoryKey,
       title: item.title || 'Pos Anggaran',
@@ -589,15 +617,14 @@ export async function saveBudgetItemToSupabase(
   }
 }
 
-export async function deleteBudgetItemFromSupabase(id: string, syncCode: string, userId?: string): Promise<boolean> {
+export async function deleteBudgetItemFromSupabase(id: string, param1?: string, param2?: string): Promise<boolean> {
   const currentConfig = getSupabaseConfig();
   if (!currentConfig.isConfigured) return false;
 
   try {
     let query = supabase.from('budgets').delete().eq('id', id);
-    if (syncCode) {
-      query = query.eq('sync_code', syncCode);
-    } else if (userId && isValidUuid(userId)) {
+    const userId = await resolveEffectiveUserId(param1, param2);
+    if (userId) {
       query = query.eq('user_id', userId);
     }
 

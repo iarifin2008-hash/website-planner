@@ -37,6 +37,7 @@ import {
   getSupabaseConfig, 
   isValidUuid, 
   generateUuid,
+  resolveEffectiveUserId,
   fetchWalletsFromSupabase,
   saveAllWalletsToSupabase,
   fetchIncomesFromSupabase,
@@ -153,44 +154,52 @@ export function App() {
 
   // --- 2. FUNGSI FETCH DATA DARI SUPABASE SECARA BACKGROUND (fetchData) ---
   const fetchData = useCallback(async (syncCode?: string, userId?: string) => {
-    const code = syncCode || profile.syncCode;
-    if (!code && !userId) return;
-
     setIsSyncingSupabase(true);
     try {
-      // 1. Ambil data dompet / saldo dari tabel 'wallets'
-      let supaWallets = await fetchWalletsFromSupabase(code, userId);
-      if (supaWallets.length === 0) {
-        // Jika kode sinkronisasi belum memiliki dompet di database, simpan default wallets saldo 0 ke Supabase
+      const config = getSupabaseConfig();
+      if (!config.isConfigured) {
+        setIsSyncingSupabase(false);
+        return;
+      }
+
+      const effectiveUserId = await resolveEffectiveUserId(syncCode || profile.syncCode, userId || profile.supabaseUserId);
+
+      // 1. Ambil data dompet / saldo dari tabel 'wallets' (mendukung column current_balance atau balance)
+      let supaWallets = await fetchWalletsFromSupabase(effectiveUserId || undefined);
+      if (supaWallets.length === 0 && effectiveUserId) {
+        // Jika belum memiliki dompet di database, simpan default wallets saldo 0 ke Supabase
         const initialToSeed = DEFAULT_ZERO_WALLETS.map(w => ({
           ...w,
           id: isValidUuid(w.id) ? w.id : generateUuid(),
           initialBalance: 0,
           balance: 0
         }));
-        await saveAllWalletsToSupabase(initialToSeed, code, userId);
+        await saveAllWalletsToSupabase(initialToSeed, effectiveUserId);
         supaWallets = initialToSeed;
       }
-      setWallets(supaWallets);
+      if (supaWallets.length > 0) {
+        setWallets(supaWallets);
+      }
 
-      // 2. Ambil data transaksi dari tabel 'transactions'
-      const supaTransactions = await fetchTransactionsFromSupabase(code, userId);
+      // 2. Ambil data transaksi dari tabel 'transactions' dengan filter user_id
+      const supaTransactions = await fetchTransactionsFromSupabase(effectiveUserId || undefined);
       
       // Ambil transaksi pengeluaran (semua transaksi selain INCOME)
       const expenseList = supaTransactions.filter((row: any) => row.type !== 'INCOME');
       setDailyExpenses(expenseList);
 
-      // 3. Ambil data pemasukan dari tabel 'incomes'
-      const supaIncomes = await fetchIncomesFromSupabase(code, userId);
+      // 3. Ambil data pemasukan dari tabel 'incomes' dengan filter user_id
+      const supaIncomes = await fetchIncomesFromSupabase(effectiveUserId || undefined);
 
       // Ambil juga jika ada transaksi pemasukan (type === 'INCOME') di tabel 'transactions'
       let queryTx = supabase.from('transactions').select('*');
-      if (code) {
-        queryTx = queryTx.eq('sync_code', code);
-      } else if (userId && isValidUuid(userId)) {
-        queryTx = queryTx.eq('user_id', userId);
+      if (effectiveUserId) {
+        queryTx = queryTx.eq('user_id', effectiveUserId);
       }
-      const { data: allTxRows } = await queryTx;
+      const { data: allTxRows, error: txErr } = await queryTx;
+      if (txErr) {
+        console.warn('Supabase fetch transactions for income error:', txErr.message);
+      }
 
       const txIncomes: IncomeItem[] = (allTxRows || [])
         .filter((r: any) => r.type === 'INCOME')
@@ -212,8 +221,8 @@ export function App() {
       
       setIncomes(combinedIncomes);
 
-      // 4. Ambil data pos anggaran & alokasi dari tabel 'budgets'
-      const supaBudgets = await fetchBudgetsFromSupabase(code, userId);
+      // 4. Ambil data pos anggaran & alokasi dari tabel 'budgets' dengan filter user_id
+      const supaBudgets = await fetchBudgetsFromSupabase(effectiveUserId || undefined);
       if (supaBudgets.allocations.length > 0) {
         setAllocations(supaBudgets.allocations);
       }
@@ -228,7 +237,7 @@ export function App() {
     } finally {
       setIsSyncingSupabase(false);
     }
-  }, [profile.syncCode, activeMonthId]);
+  }, [profile.syncCode, profile.supabaseUserId, activeMonthId]);
 
   // Alias kompatibilitas
   const loadFinancialData = fetchData;
@@ -433,13 +442,13 @@ export function App() {
 
     const code = profile.syncCode;
     const userId = profile.supabaseUserId;
+    const effectiveUserId = await resolveEffectiveUserId(code, userId);
 
-    // 1. Jalankan fungsi await supabase.from('transactions').insert([...]) untuk mengirim data ke Supabase
+    // 1. Jalankan insert data ke tabel transactions di Supabase dengan user_id
     try {
       const { error } = await supabase.from('transactions').insert([{
         id: newId,
-        sync_code: code,
-        user_id: userId && isValidUuid(userId) ? userId : null,
+        user_id: effectiveUserId || null,
         month_id: newItem.monthId || activeMonthId,
         title: newItem.title,
         amount: Number(newItem.totalAmount) || 0,
@@ -458,24 +467,54 @@ export function App() {
       console.error('Error insert transaction to Supabase:', err);
     }
 
-    // 2. Setelah data berhasil masuk ke database, perbarui state saldo di layar secara langsung (state update) tanpa me-refresh browser
+    // 2. Perbarui state transaksi harian
     setDailyExpenses(prev => [expense, ...prev]);
 
-    // 3. Panggil fungsi fetchData() secara background untuk memperbarui angka saldo di layar
+    // 3. Simpan perubahan saldo dompet (kurangi saldo) ke database Supabase secara otomatis
+    const expenseAmount = Number(newItem.totalAmount) || 0;
+    const targetWalletName = (newItem.walletName || 'Uang Cash').toLowerCase();
+    const updatedWallets = wallets.map(w => {
+      if (w.name.toLowerCase() === targetWalletName) {
+        const nextBal = Math.max(0, (Number(w.balance) || 0) - expenseAmount);
+        return { ...w, balance: nextBal };
+      }
+      return w;
+    });
+    setWallets(updatedWallets);
+    await saveAllWalletsToSupabase(updatedWallets, effectiveUserId || undefined);
+
+    // 4. Panggil fetchData() untuk memastikan sinkronisasi data
     fetchData(code, userId).catch(console.error);
   };
 
   const handleDeleteDailyExpense = async (id: string) => {
-    // Optimistic local state update
+    const deletedExpense = dailyExpenses.find(d => d.id === id);
     setDailyExpenses(prev => prev.filter(d => d.id !== id));
     const code = profile.syncCode;
     const userId = profile.supabaseUserId;
+    const effectiveUserId = await resolveEffectiveUserId(code, userId);
 
     try {
       await supabase.from('transactions').delete().eq('id', id);
     } catch (err) {
       console.error('Error delete transaction from Supabase:', err);
     }
+
+    // Kembalikan saldo ke dompet jika transaksi dihapus
+    if (deletedExpense) {
+      const refundAmount = Number(deletedExpense.totalAmount) || 0;
+      const targetWalletName = (deletedExpense.walletName || 'Uang Cash').toLowerCase();
+      const updatedWallets = wallets.map(w => {
+        if (w.name.toLowerCase() === targetWalletName) {
+          const nextBal = (Number(w.balance) || 0) + refundAmount;
+          return { ...w, balance: nextBal };
+        }
+        return w;
+      });
+      setWallets(updatedWallets);
+      await saveAllWalletsToSupabase(updatedWallets, effectiveUserId || undefined);
+    }
+
     fetchData(code, userId).catch(console.error);
   };
 
@@ -493,13 +532,13 @@ export function App() {
 
     const code = profile.syncCode;
     const userId = profile.supabaseUserId;
+    const effectiveUserId = await resolveEffectiveUserId(code, userId);
 
-    // 1. Insert langsung ke tabel incomes dan transactions di Supabase dengan await
+    // 1. Insert langsung ke tabel incomes dan transactions di Supabase dengan user_id
     try {
       await supabase.from('incomes').insert([{
         id: newId,
-        sync_code: code,
-        user_id: userId && isValidUuid(userId) ? userId : null,
+        user_id: effectiveUserId || null,
         month_id: activeMonthId,
         source: item.source,
         type: item.type,
@@ -510,8 +549,7 @@ export function App() {
 
       await supabase.from('transactions').insert([{
         id: newId,
-        sync_code: code,
-        user_id: userId && isValidUuid(userId) ? userId : null,
+        user_id: effectiveUserId || null,
         month_id: activeMonthId,
         title: item.source,
         amount: Number(item.amount) || 0,
@@ -527,10 +565,23 @@ export function App() {
       console.error('Error insert income to Supabase:', err);
     }
 
-    // 2. Pembaruan State Langsung di layar tanpa reload
+    // 2. Pembaruan state pemasukan
     setIncomes(prev => [newInc, ...prev]);
 
-    // 3. Panggil fungsi fetchData() secara background untuk memperbarui angka saldo di layar
+    // 3. Tambah saldo ke dompet yang dipilih dan simpan ke database Supabase
+    const incAmount = Number(item.amount) || 0;
+    const targetWalletName = (item.walletName || 'Saldo Rekening BCA').toLowerCase();
+    const updatedWallets = wallets.map(w => {
+      if (w.name.toLowerCase() === targetWalletName) {
+        const nextBal = (Number(w.balance) || 0) + incAmount;
+        return { ...w, balance: nextBal };
+      }
+      return w;
+    });
+    setWallets(updatedWallets);
+    await saveAllWalletsToSupabase(updatedWallets, effectiveUserId || undefined);
+
+    // 4. Sinkronisasi data
     fetchData(code, userId).catch(console.error);
   };
 
@@ -538,12 +589,12 @@ export function App() {
     setIncomes(prev => prev.map(i => i.id === updated.id ? updated : i));
     const code = profile.syncCode;
     const userId = profile.supabaseUserId;
+    const effectiveUserId = await resolveEffectiveUserId(code, userId);
 
     try {
       await supabase.from('incomes').upsert([{
         id: isValidUuid(updated.id) ? updated.id : generateUuid(),
-        sync_code: code,
-        user_id: userId && isValidUuid(userId) ? userId : null,
+        user_id: effectiveUserId || null,
         month_id: updated.monthId || activeMonthId,
         source: updated.source,
         type: updated.type,
@@ -558,15 +609,34 @@ export function App() {
   };
 
   const handleDeleteIncome = async (id: string) => {
+    const deletedInc = incomes.find(i => i.id === id);
     setIncomes(prev => prev.filter(i => i.id !== id));
     const code = profile.syncCode;
     const userId = profile.supabaseUserId;
+    const effectiveUserId = await resolveEffectiveUserId(code, userId);
 
     try {
       await supabase.from('incomes').delete().eq('id', id);
+      await supabase.from('transactions').delete().eq('id', id);
     } catch (err) {
       console.error('Error delete income from Supabase:', err);
     }
+
+    // Kurangi saldo dompet jika pemasukan dibatalkan/dihapus
+    if (deletedInc) {
+      const deductAmount = Number(deletedInc.amount) || 0;
+      const targetWalletName = (deletedInc.walletName || 'Saldo Rekening BCA').toLowerCase();
+      const updatedWallets = wallets.map(w => {
+        if (w.name.toLowerCase() === targetWalletName) {
+          const nextBal = Math.max(0, (Number(w.balance) || 0) - deductAmount);
+          return { ...w, balance: nextBal };
+        }
+        return w;
+      });
+      setWallets(updatedWallets);
+      await saveAllWalletsToSupabase(updatedWallets, effectiveUserId || undefined);
+    }
+
     await loadFinancialData(code, userId);
   };
 
@@ -580,11 +650,13 @@ export function App() {
     const updated = wallets.map(w => {
       if (w.id === sourceWalletId) {
         const nextInit = Math.max(0, (Number(w.initialBalance) || 0) - amount);
-        return { ...w, initialBalance: nextInit, balance: nextInit };
+        const nextBal = Math.max(0, (Number(w.balance) || 0) - amount);
+        return { ...w, initialBalance: nextInit, balance: nextBal };
       }
       if (w.id === targetWalletId) {
         const nextInit = (Number(w.initialBalance) || 0) + amount;
-        return { ...w, initialBalance: nextInit, balance: nextInit };
+        const nextBal = (Number(w.balance) || 0) + amount;
+        return { ...w, initialBalance: nextInit, balance: nextBal };
       }
       return w;
     });
@@ -755,11 +827,12 @@ export function App() {
   const handleImportFullData = async (payload: any) => {
     const targetCode = payload.profile?.syncCode || profile.syncCode;
     const targetUserId = profile.supabaseUserId;
+    const effectiveUserId = await resolveEffectiveUserId(targetCode, targetUserId);
 
     if (payload.profile) setProfile({ ...payload.profile, isLoggedIn: true });
     if (payload.wallets) {
       setWallets(payload.wallets);
-      await saveAllWalletsToSupabase(payload.wallets, targetCode, targetUserId);
+      await saveAllWalletsToSupabase(payload.wallets, effectiveUserId || undefined);
     }
     if (payload.months) setMonths(payload.months);
     if (payload.incomes) {
@@ -767,8 +840,7 @@ export function App() {
       for (const inc of payload.incomes) {
         await supabase.from('incomes').insert([{
           id: isValidUuid(inc.id) ? inc.id : generateUuid(),
-          sync_code: targetCode,
-          user_id: targetUserId && isValidUuid(targetUserId) ? targetUserId : null,
+          user_id: effectiveUserId || null,
           month_id: inc.monthId || activeMonthId,
           source: inc.source,
           type: inc.type,
@@ -781,31 +853,31 @@ export function App() {
     if (payload.allocations) {
       setAllocations(payload.allocations);
       for (const al of payload.allocations) {
-        await saveBudgetItemToSupabase(al, 'ALLOCATION', targetCode, targetUserId);
+        await saveBudgetItemToSupabase(al, 'ALLOCATION', effectiveUserId || undefined);
       }
     }
     if (payload.fixed) {
       setFixed(payload.fixed);
       for (const f of payload.fixed) {
-        await saveBudgetItemToSupabase(f, 'FIXED', targetCode, targetUserId);
+        await saveBudgetItemToSupabase(f, 'FIXED', effectiveUserId || undefined);
       }
     }
     if (payload.variable) {
       setVariable(payload.variable);
       for (const v of payload.variable) {
-        await saveBudgetItemToSupabase(v, 'VARIABLE', targetCode, targetUserId);
+        await saveBudgetItemToSupabase(v, 'VARIABLE', effectiveUserId || undefined);
       }
     }
     if (payload.savings) {
       setSavings(payload.savings);
       for (const s of payload.savings) {
-        await saveBudgetItemToSupabase(s, 'SAVINGS', targetCode, targetUserId);
+        await saveBudgetItemToSupabase(s, 'SAVINGS', effectiveUserId || undefined);
       }
     }
     if (payload.subscriptions) {
       setSubscriptions(payload.subscriptions);
       for (const sub of payload.subscriptions) {
-        await saveBudgetItemToSupabase(sub, 'SUBSCRIPTION', targetCode, targetUserId);
+        await saveBudgetItemToSupabase(sub, 'SUBSCRIPTION', effectiveUserId || undefined);
       }
     }
     if (payload.dailyExpenses) {
@@ -813,8 +885,7 @@ export function App() {
       for (const d of payload.dailyExpenses) {
         await supabase.from('transactions').insert([{
           id: isValidUuid(d.id) ? d.id : generateUuid(),
-          sync_code: targetCode,
-          user_id: targetUserId && isValidUuid(targetUserId) ? targetUserId : null,
+          user_id: effectiveUserId || null,
           month_id: d.monthId || activeMonthId,
           title: d.title,
           amount: Number(d.totalAmount) || 0,
@@ -845,6 +916,7 @@ export function App() {
     const amountNum = Number(quickExpenseForm.amount);
     const code = profile.syncCode;
     const userId = profile.supabaseUserId;
+    const effectiveUserId = await resolveEffectiveUserId(code, userId);
     const chosenWallet = quickExpenseForm.walletName || wallets[0]?.name || 'Uang Cash';
     const dateFormatted = new Date().toLocaleDateString('id-ID');
 
@@ -861,12 +933,11 @@ export function App() {
       walletName: chosenWallet
     };
 
-    // 1. Jalankan fungsi await supabase.from('transactions').insert([...]) untuk mengirim data ke Supabase
+    // 1. Jalankan insert ke Supabase (tabel transactions) dengan user_id
     try {
       await supabase.from('transactions').insert([{
         id: newId,
-        sync_code: code,
-        user_id: userId && isValidUuid(userId) ? userId : null,
+        user_id: effectiveUserId || null,
         month_id: activeMonthId,
         title: expenseItem.title,
         amount: amountNum,
@@ -882,8 +953,20 @@ export function App() {
       console.error('Error insert transaction to Supabase:', err);
     }
 
-    // 2. Setelah data berhasil masuk ke database, perbarui state saldo di layar secara langsung (state update) tanpa me-refresh browser
+    // 2. Perbarui state transaksi di layar
     setDailyExpenses(prev => [expenseItem, ...prev]);
+
+    // 3. Kurangi saldo dompet yang digunakan dan simpan ke Supabase
+    const targetWalletName = chosenWallet.toLowerCase();
+    const updatedWallets = wallets.map(w => {
+      if (w.name.toLowerCase() === targetWalletName) {
+        const nextBal = Math.max(0, (Number(w.balance) || 0) - amountNum);
+        return { ...w, balance: nextBal };
+      }
+      return w;
+    });
+    setWallets(updatedWallets);
+    await saveAllWalletsToSupabase(updatedWallets, effectiveUserId || undefined);
 
     // Reset form & tutup modal
     setQuickExpenseForm({
@@ -894,7 +977,7 @@ export function App() {
     });
     setIsQuickExpenseModalOpen(false);
 
-    // 3. Panggil fungsi fetchData() secara background untuk memperbarui angka saldo di layar
+    // 4. Sinkronisasi data latar belakang
     fetchData(code, userId).catch(console.error);
   };
 
@@ -913,6 +996,7 @@ export function App() {
     const amountNum = Number(quickIncomeForm.amount);
     const code = profile.syncCode;
     const userId = profile.supabaseUserId;
+    const effectiveUserId = await resolveEffectiveUserId(code, userId);
     const chosenWallet = quickIncomeForm.sourceWalletName || wallets[0]?.name || 'Saldo Rekening BCA';
     const dateFormatted = new Date().toLocaleDateString('id-ID');
 
@@ -926,12 +1010,11 @@ export function App() {
       walletName: chosenWallet
     };
 
-    // 1. Jalankan insert ke Supabase (tabel incomes & transactions) dengan await
+    // 1. Jalankan insert ke Supabase (tabel incomes & transactions) dengan user_id
     try {
       await supabase.from('incomes').insert([{
         id: newId,
-        sync_code: code,
-        user_id: userId && isValidUuid(userId) ? userId : null,
+        user_id: effectiveUserId || null,
         month_id: activeMonthId,
         source: newIncome.source,
         type: newIncome.type,
@@ -942,8 +1025,7 @@ export function App() {
 
       await supabase.from('transactions').insert([{
         id: newId,
-        sync_code: code,
-        user_id: userId && isValidUuid(userId) ? userId : null,
+        user_id: effectiveUserId || null,
         month_id: activeMonthId,
         title: newIncome.source,
         amount: amountNum,
@@ -959,8 +1041,20 @@ export function App() {
       console.error('Error insert income to Supabase:', err);
     }
 
-    // 2. Perbarui state secara langsung (state update) tanpa me-refresh browser
+    // 2. Perbarui state pemasukan di layar
     setIncomes(prev => [newIncome, ...prev]);
+
+    // 3. Tambahkan saldo ke dompet yang dipilih dan simpan ke Supabase
+    const targetWalletName = chosenWallet.toLowerCase();
+    const updatedWallets = wallets.map(w => {
+      if (w.name.toLowerCase() === targetWalletName) {
+        const nextBal = (Number(w.balance) || 0) + amountNum;
+        return { ...w, balance: nextBal };
+      }
+      return w;
+    });
+    setWallets(updatedWallets);
+    await saveAllWalletsToSupabase(updatedWallets, effectiveUserId || undefined);
 
     // Reset form & tutup modal
     setQuickIncomeForm({
@@ -971,7 +1065,7 @@ export function App() {
     });
     setIsQuickIncomeModalOpen(false);
 
-    // 3. Panggil fungsi fetchData() secara background untuk memperbarui angka saldo di layar
+    // 4. Sinkronisasi data latar belakang
     fetchData(code, userId).catch(console.error);
   };
 
