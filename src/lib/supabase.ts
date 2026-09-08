@@ -155,7 +155,7 @@ export async function fetchWalletsFromSupabase(param1?: string, param2?: string)
       query = query.eq('user_id', userId);
     }
 
-    const { data, error } = await query.order('created_at', { ascending: true });
+    const { data, error } = await query;
     if (error) {
       console.warn('Supabase fetch wallets error:', error.message);
       return [];
@@ -247,7 +247,7 @@ export async function fetchIncomesFromSupabase(param1?: string, param2?: string,
       query = query.eq('month_id', monthId);
     }
 
-    const { data, error } = await query.order('created_at', { ascending: false });
+    const { data, error } = await query;
     if (error) {
       console.warn('Supabase fetch incomes error:', error.message);
       return [];
@@ -358,7 +358,7 @@ export async function fetchTransactionsFromSupabase(param1?: string, param2?: st
       query = query.eq('month_id', monthId);
     }
 
-    const { data, error } = await query.order('created_at', { ascending: false });
+    const { data, error } = await query;
     if (error) {
       console.warn('Supabase fetch transactions error:', error.message);
       return [];
@@ -497,7 +497,7 @@ export async function fetchBudgetsFromSupabase(param1?: string, param2?: string,
       query = query.eq('month_id', monthId);
     }
 
-    const { data, error } = await query.order('created_at', { ascending: true });
+    const { data, error } = await query;
     if (error) {
       console.warn('Supabase fetch budgets error:', error.message);
       return emptyResult;

@@ -228,7 +228,7 @@ export const SyncModal: React.FC<SyncModalProps> = ({
             </div>
 
             {/* Form switch sync code */}
-            <form onSubmit={handleApplySyncCode} className="space-y-3">
+            <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); handleApplySyncCode(e); }} className="space-y-3">
               <label className="block text-xs font-semibold text-slate-700">
                 Ganti / Hubungkan ke Kode Akun Lain:
               </label>
@@ -241,7 +241,8 @@ export const SyncModal: React.FC<SyncModalProps> = ({
                   className="flex-1 bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-xs text-slate-800 font-mono uppercase focus:outline-none focus:border-sky-500"
                 />
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={handleApplySyncCode}
                   className="px-4 py-2 rounded-xl text-xs font-bold text-white shadow-sm flex items-center gap-1 cursor-pointer"
                   style={{ backgroundColor: theme.primary }}
                 >

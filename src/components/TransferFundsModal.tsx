@@ -93,7 +93,7 @@ export const TransferFundsModal: React.FC<TransferFundsModalProps> = ({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); handleSubmit(e); }} className="space-y-4">
           
           {/* From Wallet */}
           <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
@@ -197,7 +197,8 @@ export const TransferFundsModal: React.FC<TransferFundsModalProps> = ({
               Batal
             </button>
             <button
-              type="submit"
+              type="button"
+              onClick={handleSubmit}
               className="px-5 py-2.5 rounded-xl text-xs font-bold text-white shadow-md transition hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1.5"
               style={{ backgroundColor: theme.primary }}
             >

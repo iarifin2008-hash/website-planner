@@ -116,7 +116,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </button>
         </div>
 
-        <form onSubmit={handleSaveSettings} className="space-y-6">
+        <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); handleSaveSettings(e); }} className="space-y-6">
           
           {/* Section 1: Mode Tampilan Antarmuka (3 Pilihan) */}
           <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl">
@@ -365,7 +365,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* Actions: Save & Logout */}
           <div className="space-y-2 pt-2">
             <button
-              type="submit"
+              type="button"
+              onClick={handleSaveSettings}
               className="w-full py-3 rounded-xl text-xs font-bold text-white shadow-md flex items-center justify-center gap-1.5 transition cursor-pointer"
               style={{ backgroundColor: currentTheme.primary }}
             >

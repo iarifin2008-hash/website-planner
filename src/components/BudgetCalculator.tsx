@@ -200,7 +200,7 @@ export const BudgetCalculator: React.FC<BudgetCalculatorProps> = ({
 
         {/* Add / Edit Income Form */}
         {(isAddingIncome || editingIncome) && (
-          <form onSubmit={handleIncomeSubmit} className="mb-4 p-4 rounded-2xl bg-slate-50 border border-slate-200 animate-fadeIn">
+          <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); handleIncomeSubmit(e); }} className="mb-4 p-4 rounded-2xl bg-slate-50 border border-slate-200 animate-fadeIn">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-bold text-slate-700">
                 {editingIncome ? `Edit Pemasukan: ${editingIncome.source}` : 'Tambah Sumber Pemasukan Baru'}
@@ -284,7 +284,8 @@ export const BudgetCalculator: React.FC<BudgetCalculatorProps> = ({
                 Batal
               </button>
               <button
-                type="submit"
+                type="button"
+                onClick={handleIncomeSubmit}
                 className="px-4 py-1.5 rounded-xl text-xs font-bold text-white shadow-sm cursor-pointer"
                 style={{ backgroundColor: theme.primary }}
               >

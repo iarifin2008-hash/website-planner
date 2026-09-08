@@ -270,7 +270,7 @@ export const WalletList: React.FC<WalletListProps> = ({
 
       {/* Add / Edit Wallet Modal Inline Form */}
       {(isAddingNew || editingWallet) && (
-        <form onSubmit={handleSaveWallet} className="mb-6 p-4 rounded-2xl bg-slate-50 border border-slate-200 animate-fadeIn">
+        <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); handleSaveWallet(e); }} className="mb-6 p-4 rounded-2xl bg-slate-50 border border-slate-200 animate-fadeIn">
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-bold text-slate-700">
               {isAddingNew ? 'Tambah Akun Kas Baru' : `Edit Akun Kas: ${editingWallet?.name}`}
@@ -340,7 +340,8 @@ export const WalletList: React.FC<WalletListProps> = ({
             </button>
 
             <button
-              type="submit"
+              type="button"
+              onClick={handleSaveWallet}
               className="px-4 py-1.5 rounded-xl text-xs font-bold text-white shadow-xs cursor-pointer"
               style={{ backgroundColor: theme.primary }}
             >

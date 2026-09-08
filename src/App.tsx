@@ -429,11 +429,12 @@ export function App() {
   const currentTheme = THEME_PRESETS[profile.themePreset] || THEME_PRESETS.SHARK_BLUE;
 
   // --- Action Handlers: INSERT / UPDATE / DELETE LANGSUNG KE SUPABASE & OPTIMISTIC UPDATE ---
-  const handleAddDailyExpense = async (newItem: Omit<DailyExpenseItem, 'id'>, e: any = { preventDefault: () => {} }) => {
-    e.preventDefault();
-    if (e.stopPropagation) {
-      e.stopPropagation();
+  const handleAddDailyExpense = async (newItem: Omit<DailyExpenseItem, 'id'>, e?: any) => {
+    if (e) {
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+      if (typeof e.stopPropagation === 'function') e.stopPropagation();
     }
+
     const newId = generateUuid();
     const expense: DailyExpenseItem = {
       ...newItem,
@@ -444,7 +445,22 @@ export function App() {
     const userId = profile.supabaseUserId;
     const effectiveUserId = await resolveEffectiveUserId(code, userId);
 
-    // 1. Jalankan insert data ke tabel transactions di Supabase dengan user_id
+    // 1. Optimistic update langsung di state React (Real-time tanpa reload / kedip)
+    setDailyExpenses(prev => [expense, ...prev]);
+
+    // 2. Optimistic update kurangi saldo dompet kas lokal seketika
+    const expenseAmount = Number(newItem.totalAmount) || 0;
+    const targetWalletName = (newItem.walletName || 'Uang Cash').toLowerCase();
+    const updatedWallets = wallets.map(w => {
+      if (w.name.toLowerCase() === targetWalletName || w.id === newItem.walletName) {
+        const nextBal = Math.max(0, (Number(w.balance) || 0) - expenseAmount);
+        return { ...w, balance: nextBal };
+      }
+      return w;
+    });
+    setWallets(updatedWallets);
+
+    // 3. Simpan transaksi baru ke tabel transactions di Supabase secara asinkron
     try {
       const { error } = await supabase.from('transactions').insert([{
         id: newId,
@@ -467,23 +483,10 @@ export function App() {
       console.error('Error insert transaction to Supabase:', err);
     }
 
-    // 2. Perbarui state transaksi harian
-    setDailyExpenses(prev => [expense, ...prev]);
-
-    // 3. Simpan perubahan saldo dompet (kurangi saldo) ke database Supabase secara otomatis
-    const expenseAmount = Number(newItem.totalAmount) || 0;
-    const targetWalletName = (newItem.walletName || 'Uang Cash').toLowerCase();
-    const updatedWallets = wallets.map(w => {
-      if (w.name.toLowerCase() === targetWalletName) {
-        const nextBal = Math.max(0, (Number(w.balance) || 0) - expenseAmount);
-        return { ...w, balance: nextBal };
-      }
-      return w;
-    });
-    setWallets(updatedWallets);
+    // 4. Simpan saldo dompet baru ke database Supabase
     await saveAllWalletsToSupabase(updatedWallets, effectiveUserId || undefined);
 
-    // 4. Panggil fetchData() untuk memastikan sinkronisasi data
+    // 5. Panggil fetchData latar belakang tanpa mengganggu layar
     fetchData(code, userId).catch(console.error);
   };
 
@@ -518,10 +521,10 @@ export function App() {
     fetchData(code, userId).catch(console.error);
   };
 
-  const handleAddIncome = async (item: Omit<IncomeItem, 'id' | 'monthId'>, e: any = { preventDefault: () => {} }) => {
-    e.preventDefault();
-    if (e.stopPropagation) {
-      e.stopPropagation();
+  const handleAddIncome = async (item: Omit<IncomeItem, 'id' | 'monthId'>, e?: any) => {
+    if (e) {
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+      if (typeof e.stopPropagation === 'function') e.stopPropagation();
     }
     const newId = generateUuid();
     const newInc: IncomeItem = {
@@ -534,7 +537,22 @@ export function App() {
     const userId = profile.supabaseUserId;
     const effectiveUserId = await resolveEffectiveUserId(code, userId);
 
-    // 1. Insert langsung ke tabel incomes dan transactions di Supabase dengan user_id
+    // 1. Optimistic update state pemasukan langsung di React
+    setIncomes(prev => [newInc, ...prev]);
+
+    // 2. Optimistic update saldo dompet lokal seketika
+    const incAmount = Number(item.amount) || 0;
+    const targetWalletName = (item.walletName || 'Saldo Rekening BCA').toLowerCase();
+    const updatedWallets = wallets.map(w => {
+      if (w.name.toLowerCase() === targetWalletName || w.id === item.walletName) {
+        const nextBal = (Number(w.balance) || 0) + incAmount;
+        return { ...w, balance: nextBal };
+      }
+      return w;
+    });
+    setWallets(updatedWallets);
+
+    // 3. Simpan data ke tabel incomes dan transactions di Supabase secara asinkron
     try {
       await supabase.from('incomes').insert([{
         id: newId,
@@ -565,23 +583,10 @@ export function App() {
       console.error('Error insert income to Supabase:', err);
     }
 
-    // 2. Pembaruan state pemasukan
-    setIncomes(prev => [newInc, ...prev]);
-
-    // 3. Tambah saldo ke dompet yang dipilih dan simpan ke database Supabase
-    const incAmount = Number(item.amount) || 0;
-    const targetWalletName = (item.walletName || 'Saldo Rekening BCA').toLowerCase();
-    const updatedWallets = wallets.map(w => {
-      if (w.name.toLowerCase() === targetWalletName) {
-        const nextBal = (Number(w.balance) || 0) + incAmount;
-        return { ...w, balance: nextBal };
-      }
-      return w;
-    });
-    setWallets(updatedWallets);
+    // 4. Simpan saldo dompet baru ke database Supabase
     await saveAllWalletsToSupabase(updatedWallets, effectiveUserId || undefined);
 
-    // 4. Sinkronisasi data
+    // 5. Sinkronisasi data di latar belakang
     fetchData(code, userId).catch(console.error);
   };
 
@@ -904,10 +909,10 @@ export function App() {
   };
 
   // --- Fungsi handleSubmit / Penanganan Tambah Transaksi di src/App.tsx ---
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (e.stopPropagation) {
-      e.stopPropagation();
+  const handleSubmit = async (e?: React.SyntheticEvent | any) => {
+    if (e) {
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+      if (typeof e.stopPropagation === 'function') e.stopPropagation();
     }
 
     if (!quickExpenseForm.title.trim() || !quickExpenseForm.amount || Number(quickExpenseForm.amount) <= 0) return;
@@ -933,7 +938,30 @@ export function App() {
       walletName: chosenWallet
     };
 
-    // 1. Jalankan insert ke Supabase (tabel transactions) dengan user_id
+    // 1. Optimistic update langsung di state React (Real-time tanpa reload / kedip)
+    setDailyExpenses(prev => [expenseItem, ...prev]);
+
+    // 2. Optimistic update kurangi saldo dompet kas lokal seketika
+    const targetWalletName = chosenWallet.toLowerCase();
+    const updatedWallets = wallets.map(w => {
+      if (w.name.toLowerCase() === targetWalletName || w.id === chosenWallet) {
+        const nextBal = Math.max(0, (Number(w.balance) || 0) - amountNum);
+        return { ...w, balance: nextBal };
+      }
+      return w;
+    });
+    setWallets(updatedWallets);
+
+    // 3. Reset form & tutup modal seketika
+    setQuickExpenseForm({
+      title: '',
+      amount: '',
+      category: 'Jajan',
+      walletName: ''
+    });
+    setIsQuickExpenseModalOpen(false);
+
+    // 4. Jalankan insert ke Supabase (tabel transactions) dengan user_id secara asinkron
     try {
       await supabase.from('transactions').insert([{
         id: newId,
@@ -953,41 +981,20 @@ export function App() {
       console.error('Error insert transaction to Supabase:', err);
     }
 
-    // 2. Perbarui state transaksi di layar
-    setDailyExpenses(prev => [expenseItem, ...prev]);
-
-    // 3. Kurangi saldo dompet yang digunakan dan simpan ke Supabase
-    const targetWalletName = chosenWallet.toLowerCase();
-    const updatedWallets = wallets.map(w => {
-      if (w.name.toLowerCase() === targetWalletName) {
-        const nextBal = Math.max(0, (Number(w.balance) || 0) - amountNum);
-        return { ...w, balance: nextBal };
-      }
-      return w;
-    });
-    setWallets(updatedWallets);
+    // 5. Simpan perubahan saldo dompet ke database Supabase
     await saveAllWalletsToSupabase(updatedWallets, effectiveUserId || undefined);
 
-    // Reset form & tutup modal
-    setQuickExpenseForm({
-      title: '',
-      amount: '',
-      category: 'Jajan',
-      walletName: ''
-    });
-    setIsQuickExpenseModalOpen(false);
-
-    // 4. Sinkronisasi data latar belakang
+    // 6. Sinkronisasi data latar belakang
     fetchData(code, userId).catch(console.error);
   };
 
   const handleQuickExpenseSubmit = handleSubmit;
 
   // Quick Income Submit Handler (+ Pemasukan)
-  const handleQuickIncomeSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (e.stopPropagation) {
-      e.stopPropagation();
+  const handleQuickIncomeSubmit = async (e?: React.SyntheticEvent | any) => {
+    if (e) {
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+      if (typeof e.stopPropagation === 'function') e.stopPropagation();
     }
 
     if (!quickIncomeForm.title.trim() || !quickIncomeForm.amount || Number(quickIncomeForm.amount) <= 0) return;
@@ -1010,7 +1017,30 @@ export function App() {
       walletName: chosenWallet
     };
 
-    // 1. Jalankan insert ke Supabase (tabel incomes & transactions) dengan user_id
+    // 1. Optimistic update state pemasukan langsung di React (Real-time tanpa reload / kedip)
+    setIncomes(prev => [newIncome, ...prev]);
+
+    // 2. Optimistic update tambah saldo dompet penerima seketika
+    const targetWalletName = chosenWallet.toLowerCase();
+    const updatedWallets = wallets.map(w => {
+      if (w.name.toLowerCase() === targetWalletName || w.id === chosenWallet) {
+        const nextBal = (Number(w.balance) || 0) + amountNum;
+        return { ...w, balance: nextBal };
+      }
+      return w;
+    });
+    setWallets(updatedWallets);
+
+    // 3. Reset form & tutup modal seketika
+    setQuickIncomeForm({
+      title: '',
+      amount: '',
+      category: 'Utama',
+      sourceWalletName: ''
+    });
+    setIsQuickIncomeModalOpen(false);
+
+    // 4. Jalankan insert ke Supabase (tabel incomes & transactions) dengan user_id secara asinkron
     try {
       await supabase.from('incomes').insert([{
         id: newId,
@@ -1041,31 +1071,10 @@ export function App() {
       console.error('Error insert income to Supabase:', err);
     }
 
-    // 2. Perbarui state pemasukan di layar
-    setIncomes(prev => [newIncome, ...prev]);
-
-    // 3. Tambahkan saldo ke dompet yang dipilih dan simpan ke Supabase
-    const targetWalletName = chosenWallet.toLowerCase();
-    const updatedWallets = wallets.map(w => {
-      if (w.name.toLowerCase() === targetWalletName) {
-        const nextBal = (Number(w.balance) || 0) + amountNum;
-        return { ...w, balance: nextBal };
-      }
-      return w;
-    });
-    setWallets(updatedWallets);
+    // 5. Simpan saldo dompet baru ke database Supabase
     await saveAllWalletsToSupabase(updatedWallets, effectiveUserId || undefined);
 
-    // Reset form & tutup modal
-    setQuickIncomeForm({
-      title: '',
-      amount: '',
-      category: 'Utama',
-      sourceWalletName: ''
-    });
-    setIsQuickIncomeModalOpen(false);
-
-    // 4. Sinkronisasi data latar belakang
+    // 6. Sinkronisasi data latar belakang
     fetchData(code, userId).catch(console.error);
   };
 
@@ -1683,7 +1692,7 @@ export function App() {
               </button>
             </div>
 
-            <div className="space-y-3.5 text-xs">
+            <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); handleQuickIncomeSubmit(e); }} className="space-y-3.5 text-xs">
               <div>
                 <label className="font-bold text-slate-700 block mb-1">Sumber Pemasukan:</label>
                 <input
@@ -1752,7 +1761,7 @@ export function App() {
                   Simpan Pemasukan
                 </button>
               </div>
-            </div>
+            </form>
           </div>
         </div>
       )}
@@ -1777,7 +1786,7 @@ export function App() {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-3.5 text-xs">
+            <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); handleSubmit(e); }} className="space-y-3.5 text-xs">
               <div>
                 <label className="font-bold text-slate-700 block mb-1">Nama Item Belanja / Jajan:</label>
                 <input
@@ -1841,7 +1850,8 @@ export function App() {
                   Batal
                 </button>
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={handleSubmit}
                   className="min-h-[44px] flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-xs cursor-pointer"
                 >
                   Simpan & Potong Kas
@@ -1956,7 +1966,8 @@ export function App() {
                   Batal
                 </button>
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={() => handleAddNewMonth(newMonthForm.monthName, Number(newMonthForm.year), newMonthForm.notes)}
                   className="min-h-[44px] flex-1 py-2.5 rounded-xl text-white text-xs font-bold shadow-xs cursor-pointer hover:opacity-95"
                   style={{ backgroundColor: currentTheme.primary }}
                 >

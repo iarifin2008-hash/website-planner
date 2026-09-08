@@ -129,7 +129,7 @@ export const DailyExpensesSection: React.FC<DailyExpensesSectionProps> = ({
 
       {/* Inline Form Add Daily Expense */}
       {isAdding && (
-        <form onSubmit={handleSubmit} className="mb-6 p-4 rounded-2xl bg-slate-50 border border-slate-200 animate-fadeIn">
+        <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); handleSubmit(e); }} className="mb-6 p-4 rounded-2xl bg-slate-50 border border-slate-200 animate-fadeIn">
           <div className="text-xs font-bold text-slate-700 mb-3 flex items-center justify-between">
             <span>Input Transaksi Belanja / Jajan Baru</span>
             <span className="text-[11px] text-sky-700 font-semibold bg-sky-50 px-2 py-0.5 rounded-md border border-sky-200">
@@ -255,7 +255,8 @@ export const DailyExpensesSection: React.FC<DailyExpensesSectionProps> = ({
                 Batal
               </button>
               <button
-                type="submit"
+                type="button"
+                onClick={handleSubmit}
                 className="px-4 py-1.5 rounded-xl text-xs font-bold text-white shadow-xs cursor-pointer"
                 style={{ backgroundColor: theme.primary }}
               >

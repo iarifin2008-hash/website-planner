@@ -223,7 +223,7 @@ export const ExpenseSections: React.FC<ExpenseSectionsProps> = ({
 
       {/* Add Item Form */}
       {isAdding && (
-        <form onSubmit={handleFormSubmit} className="mb-6 p-4 rounded-2xl bg-slate-50 border border-slate-200 animate-fadeIn">
+        <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); handleFormSubmit(e); }} className="mb-6 p-4 rounded-2xl bg-slate-50 border border-slate-200 animate-fadeIn">
           <div className="text-xs font-bold text-slate-700 mb-3">
             Tambah Pos: {activeTab === 'FIXED' ? 'Kebutuhan Pokok' : activeTab === 'VARIABLE' ? 'Kebutuhan Variabel' : activeTab === 'SAVINGS' ? 'Tabungan / Investasi' : 'Langganan / Tagihan'}
           </div>
@@ -310,7 +310,8 @@ export const ExpenseSections: React.FC<ExpenseSectionsProps> = ({
               Batal
             </button>
             <button
-              type="submit"
+              type="button"
+              onClick={handleFormSubmit}
               className="px-4 py-1.5 rounded-xl text-xs font-bold text-white shadow-sm"
               style={{ backgroundColor: theme.primary }}
             >
